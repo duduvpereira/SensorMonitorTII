@@ -149,6 +149,9 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# run.sh's own logs and PID state -- never part of the project.
+.sensor-monitor-run/
+
 # Environments
 .env
 .envrc

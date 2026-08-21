@@ -17,6 +17,8 @@ htmlcov/
 backend/tests/
 demo_pipeline.py
 setup.sh
+run.sh
+.sensor-monitor-run/
 
 # Accidental downloads (wheels/sdists in repo root)
 *.whl

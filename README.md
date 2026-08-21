@@ -197,7 +197,36 @@ To install only what the application itself needs, use
 
 #### Run the application
 
-Three steps — the mock uC, the backend, and the browser:
+**Linux / macOS — one command:** `./run.sh` starts the mock uC and the
+backend together, tails both logs to the terminal, and cleans up on
+`Ctrl-C`. It assumes `./setup.sh` has already created `.venv`.
+
+```bash
+./run.sh
+```
+
+Before starting anything, it:
+
+- **imports the application in `.venv`'s Python and checks for errors** —
+  a broken environment fails right here, with the real traceback on screen,
+  instead of as a background process that dies a second later for a reason
+  buried in a log file;
+- **stops any leftover `mock_uc.server`/`backend.app.main` process from a
+  previous run** that's still holding the ports — the scenario behind most
+  `address already in use` reports (a closed terminal or a killed shell that
+  never got to shut its children down cleanly). It only ever touches a PID
+  whose own command line unmistakably names one of this project's modules,
+  never anything else that happens to reuse a recycled PID.
+
+Run `./run.sh --doctor` any time (nothing needs to be running first) for a
+one-shot environment report — every Python interpreter found and its
+version, whether `.venv` exists and what it has installed, whether ports
+48000/48765 are free, and whether `git`/`docker` are on PATH. It is the
+fastest way to answer "why won't this run on your machine" without a back
+and forth of screenshots.
+
+**By hand, in two terminals** (useful for `--reload` during development, or
+on Windows):
 
 ```bash
 # 1. In one terminal: start the mock microcontroller
@@ -258,8 +287,9 @@ specified for the real hardware).
 `Address already in use`? Something is already bound to that port — most
 often a previous `mock_uc.server` that's still running in another terminal
 (a `Ctrl+C` that didn't actually stop it, or the same command started twice).
-The server now reports this with an actionable message instead of a raw
-traceback:
+`./run.sh` (above) checks for and stops exactly this automatically; started
+by hand, the server now reports it with an actionable message instead of a
+raw traceback:
 ```
 [mock_uc] ERROR: port 48765 is already in use.
 Another mock_uc.server is probably still running. Try:
@@ -474,6 +504,7 @@ SensorMonitorTII/
 ├── .dockerignore                 # keeps tests/docs/caches out of the image
 ├── demo_pipeline.py               # manual dev script: real client + mock uC, no web server
 ├── setup.sh                       # Linux/macOS: finds Python 3.12+, creates .venv, installs deps
+├── run.sh                         # Linux/macOS: runs mock uC + backend together; --doctor diagnostics
 ├── pyproject.toml                # pytest / coverage / ruff configuration
 ├── requirements.txt               # runtime dependencies
 └── requirements-dev.txt           # + testing/lint dependencies
@@ -665,6 +696,23 @@ implementation decision:
     different shell) is exactly when a silent version mismatch is most
     likely, so the guard stays in the app itself rather than only in the
     setup script.
+
+26. **`run.sh` only reaps a PID if its own command line names this
+    project's modules.** The leftover-process cleanup (killing a
+    `mock_uc.server`/`backend.app.main` still bound to a port from a
+    previous run) reads PIDs back from a state file `run.sh` wrote itself,
+    but never trusts that file alone — a PID is just a number the OS is
+    free to recycle for an unrelated process the moment the original one
+    exits. Before killing anything, it re-checks that PID's live command
+    line for one of those two module names. Worth the extra `ps` call: the
+    alternative is a script that can kill a stranger's process because a
+    number happened to match.
+
+27. **`setup.sh` and `run.sh` read the Python floor from `pyproject.toml`
+    (`requires-python`) instead of hardcoding `3.12` in both.** One value
+    to bump if the floor ever changes, and the two scripts can't quietly
+    drift out of sync with each other or with the version guard described
+    in #25.
 
 ## Continuous Integration
 

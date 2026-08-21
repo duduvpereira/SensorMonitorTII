@@ -7,8 +7,18 @@
 # Usage: ./setup.sh
 set -euo pipefail
 
+# Read the version floor from pyproject.toml's `requires-python = ">=X.Y"`
+# instead of hardcoding it here too -- one source of truth, and a bump to
+# the project's floor doesn't need a matching edit in this script.
 REQUIRED_MAJOR=3
 REQUIRED_MINOR=12
+if [ -f pyproject.toml ]; then
+  ver="$(grep -E '^requires-python' pyproject.toml | grep -oE '[0-9]+\.[0-9]+' | head -1 || true)"
+  if [ -n "$ver" ]; then
+    REQUIRED_MAJOR="${ver%%.*}"
+    REQUIRED_MINOR="${ver##*.}"
+  fi
+fi
 
 is_new_enough() {
   # $1: a python interpreter to check.
@@ -16,8 +26,16 @@ is_new_enough() {
     > /dev/null 2>&1
 }
 
+# Try the exact floor first, then a few newer minors (in case that one isn't
+# installed but a later one is), then whatever `python3`/`python` resolve to.
+CANDIDATES="python3.${REQUIRED_MINOR}"
+for offset in 1 2 3; do
+  CANDIDATES="$CANDIDATES python3.$((REQUIRED_MINOR + offset))"
+done
+CANDIDATES="$CANDIDATES python3 python"
+
 PYTHON=""
-for candidate in python3.12 python3.13 python3.14 python3 python; do
+for candidate in $CANDIDATES; do
   if command -v "$candidate" > /dev/null 2>&1 && is_new_enough "$candidate"; then
     PYTHON="$candidate"
     break
@@ -26,12 +44,12 @@ done
 
 if [ -z "$PYTHON" ]; then
   echo "ERROR: no Python ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+ interpreter found on PATH." >&2
-  echo "Checked: python3.12, python3.13, python3.14, python3, python." >&2
+  echo "Checked: $CANDIDATES" >&2
   echo >&2
   echo "On Ubuntu, the deadsnakes PPA installs a newer interpreter side by" >&2
   echo "side with the system one:" >&2
   echo "  sudo add-apt-repository -y ppa:deadsnakes/ppa && sudo apt update" >&2
-  echo "  sudo apt install -y python3.12 python3.12-venv" >&2
+  echo "  sudo apt install -y python${REQUIRED_MAJOR}.${REQUIRED_MINOR} python${REQUIRED_MAJOR}.${REQUIRED_MINOR}-venv" >&2
   echo >&2
   echo "Or skip Python entirely and run with Docker instead:" >&2
   echo "  docker compose up --build" >&2
@@ -53,7 +71,9 @@ fi
 
 echo
 echo "Setup complete. Next steps:"
+echo "  ./run.sh                 # starts the mock uC + backend, opens on localhost:48000"
+echo
+echo "...or run them by hand in two terminals:"
 echo "  source .venv/bin/activate"
 echo "  python -m mock_uc.server --fps 60 --port 48765   # terminal 1"
 echo "  python -m uvicorn backend.app.main:app --reload --port 48000   # terminal 2"
-echo "  open http://localhost:48000"
