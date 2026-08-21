@@ -118,9 +118,16 @@ machine (a plain `python3` isn't guaranteed to be new enough — see the note
 below), creates `.venv` with it, and installs the dev dependencies:
 
 ```bash
+chmod +x setup.sh   # the execute bit doesn't always survive a git clone/transfer
 ./setup.sh
 source .venv/bin/activate
 ```
+
+Run it without `sudo`. It only touches `.venv` and installs packages into it,
+neither of which should be owned by root — if `python3.12 -m venv` itself
+complains that `ensurepip` is unavailable, the fix is a system package
+(`sudo apt install python3.12-venv` on Ubuntu/Debian), not running the whole
+script as root.
 
 **Windows, or by hand on any OS:**
 
