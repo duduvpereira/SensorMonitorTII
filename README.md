@@ -294,41 +294,19 @@ tested without physical hardware.
 ## Architecture
 
 The backend acts as a WebSocket **client** to the uC and a WebSocket
-**server** to the browser at the same time, on the same `asyncio` event loop:
-
-```mermaid
-flowchart LR
-    subgraph Sensor Side
-        S[Sensor] -->|2 Msps int32_le| UC[uC WebSocket Server<br/>or mock_uc]
-    end
-
-    subgraph Backend
-        WS[WebSocket Client<br/>connects to uC]
-        PIPE[Pipeline:<br/>parse → validate → hash → sample rate → decimate]
-        SRV[FastAPI WebSocket Server<br/>serves the browser]
-        WS --> PIPE --> SRV
-    end
-
-    subgraph Browser
-        UI[Web GUI<br/>TD/FD plot · log · gauge · popups]
-    end
-
-    UC -->|~8 MB/s, 20000 samples/frame| WS
-    SRV -->|JSON: frame + log line + plot samples / spectrum| UI
-    UI -->|connect / disconnect / set_domain| SRV
-    UI -->|GET /export| SRV
-```
-
+**server** to the browser at the same time, on the same `asyncio` event loop.
 Each incoming frame goes through a small pipeline of pure, independently
 testable steps — parse the raw bytes, validate the sample count, hash the
-payload, update the sample-rate estimate, and decimate the signal down to a
-plot-friendly point count — before being pushed to the browser as JSON.
+payload, update the sample-rate estimate, and decimate the signal (or run the
+FFT, in FD) — before being pushed to the browser as JSON. Every frame's
+metadata is forwarded unconditionally; only the heavy `plot_samples` /
+`spectrum_db` array is gated by a 30 fps throttle, so no log entry is ever
+lost while the plot stays smooth.
 
-Every frame's metadata (log line, hash, validity, sample rate) is forwarded
-unconditionally; only the heavy `plot_samples` array is gated by a 30 fps
-throttle, so no log entry is ever lost while the plot stays smooth. Recent
-frames are kept in a bounded ring buffer, which is what the export endpoint
-reads from.
+Full diagrams (system flowchart, connection-lifecycle sequence) live in
+**[docs/architecture.md](docs/architecture.md)**, and a screenshot walkthrough
+of the running GUI — both plot domains, max-hold, every popup — is in
+**[docs/gui-tour.md](docs/gui-tour.md)**.
 
 ## Project Status
 
@@ -450,7 +428,10 @@ SensorMonitorTII/
 │   ├── workflows/ci.yml          # test + coverage CI pipeline
 │   └── scripts/build_job_summary.py  # renders the CI job summary
 ├── docs/
-│   └── install-docker.md         # Docker Engine install steps (Ubuntu / Fedora)
+│   ├── install-docker.md         # Docker Engine install steps (Ubuntu / Fedora)
+│   ├── architecture.md           # system flowchart + connection-lifecycle sequence diagram
+│   ├── gui-tour.md               # screenshot walkthrough of the running GUI
+│   └── images/                   # screenshots referenced by gui-tour.md
 ├── Dockerfile                    # multi-stage build, non-root runtime image
 ├── docker-compose.yml            # app + mock uC, one command to run everything
 ├── .dockerignore                 # keeps tests/docs/caches out of the image
