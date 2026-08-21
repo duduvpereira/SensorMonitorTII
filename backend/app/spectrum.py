@@ -1,7 +1,6 @@
 """Frequency-domain analysis (FFT).
 
-The challenge's optional requirement is a frequency-domain view of the same
-signal. Three decisions shape this module:
+Three decisions shape this module:
 
 1. The FFT runs on the *raw* 20000 samples, never on the decimated plot data.
    Min/max decimation deliberately distorts the waveform to preserve its
@@ -9,11 +8,11 @@ signal. Three decisions shape this module:
    from it would be meaningless. So the transform happens here, in the
    backend, where the raw frame still exists.
 
-2. The frequency axis is derived from the sensor's *acquisition* rate (2 Msps
-   per the spec), not from the measured frame-arrival rate. Bin spacing is a
-   property of how fast the ADC sampled, and the mock uC can be throttled to
-   any --fps while still synthesising a 2 Msps waveform. Using the arrival
-   estimate here would move the tones around whenever delivery hiccupped.
+2. The frequency axis is derived from the sensor's *acquisition* rate (2 Msps),
+   not from the measured frame-arrival rate. Bin spacing is a property of how
+   fast the ADC sampled, and the mock uC can be throttled to any --fps while
+   still synthesising a 2 Msps waveform. Using the arrival estimate here would
+   move the tones around whenever delivery hiccupped.
 
 3. Magnitudes are reported in dBFS (decibels relative to int32 full scale).
    The scale is bounded above by 0 dB, which keeps the plot's y-range stable
@@ -27,7 +26,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-# Sensor acquisition rate from the challenge spec. See note 2 above.
+# Sensor acquisition rate (the ADC's, not the frame-arrival rate). See note 2 above.
 NOMINAL_SAMPLE_RATE_HZ = 2_000_000
 
 # int32 full scale, the 0 dBFS reference.

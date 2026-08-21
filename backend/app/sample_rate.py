@@ -1,8 +1,7 @@
 """Sample-rate estimation.
 
-The challenge requires displaying an estimated sample rate, measured at every
-frame. The rate is derived from how many samples arrived between two frame
-timestamps:
+Estimates samples/second, measured at every frame, from how many samples
+arrived between two frame timestamps:
 
     rate = samples_in_current_frame / (t_now - t_previous)
 

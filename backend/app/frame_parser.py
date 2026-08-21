@@ -13,7 +13,7 @@ import numpy as np
 SAMPLE_DTYPE = np.dtype("<i4")
 SAMPLE_SIZE_BYTES = SAMPLE_DTYPE.itemsize  # 4
 
-# Expected number of samples in a well-formed frame (per the challenge spec).
+# Expected number of samples in a well-formed frame.
 EXPECTED_SAMPLES_PER_FRAME = 20000
 
 

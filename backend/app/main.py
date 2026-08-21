@@ -16,8 +16,8 @@ Flow:
        so the frontend can show popups and toggle the Connect button.
     5. Browser can send {"action": "disconnect"} to stop the stream.
 
-Scope: one frontend client at a time (per the challenge's "one client, one
-server" assumption). A second connection is rejected while one is active.
+Scope: one frontend client at a time. A second connection is rejected while
+one is active.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ from .websocket_client import StreamOptions, stream_frames  # noqa: E402
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
-# Retain ~10 seconds of frames at the uC's ~100 fps for the optional export.
+# Retain ~10 seconds of frames at the uC's ~100 fps for export.
 BUFFER_CAPACITY = 1000
 
 # Cap the plot at 30 updates/second regardless of arrival rate.

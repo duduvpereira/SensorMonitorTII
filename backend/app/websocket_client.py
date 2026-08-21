@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 
-import numpy as np
 import websockets
 
 from .frame_parser import EXPECTED_SAMPLES_PER_FRAME, parse_frame
@@ -180,7 +179,6 @@ async def stream_frames(
     try:
         async for payload in connection:
             # The uC sends binary frames; ignore any stray text messages.
-            # Verify this
             if isinstance(payload, str):
                 payload = payload.encode("latin-1")
             frame_number += 1
@@ -202,10 +200,3 @@ async def stream_frames(
 
     # Normal end of stream (server stopped sending and closed cleanly).
     yield ConnectionEvent(kind="disconnected", detail="stream ended")
-
-
-
-## TODO REMOVE
-# Silence "imported but unused" for numpy in environments that tree-shake;
-# parse_frame returns an ndarray so numpy is a real runtime dependency.
-_ = np

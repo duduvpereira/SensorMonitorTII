@@ -2,18 +2,12 @@
 
 Sits between the WebSocket client (which produces processed frames at the uC's
 rate, up to ~100/s) and the consumers (the plot, which only needs the latest
-frame at ~30/s, and an optional data export, which needs a short history).
+frame at ~30/s, and data export, which needs a short history).
 
-A fixed-capacity ring buffer is the right structure here:
-  - O(1) append that overwrites the oldest frame once full, so memory is
-    bounded no matter how long the stream runs;
-  - keeps the most recent N frames available for the "export last N seconds"
-    optional feature without ever growing without limit.
-
-The buffer stores whole ProcessedFrame objects. It deliberately does NOT do any
-rate-limiting/throttling itself — deciding *how often* to read the latest frame
-for the plot is the consumer's job (the web layer). This keeps the buffer a
-simple, fully-testable data structure with no timing behaviour.
+A deque(maxlen=capacity) bounds memory automatically -- once full, each append
+evicts the oldest frame. The buffer does no rate-limiting of its own; deciding
+how often to read the latest frame for the plot is the consumer's job (the web
+layer).
 
 Thread/task-safety note: in this app the buffer is written and read from the
 same asyncio event loop (no threads), so no locking is required. If it were
@@ -67,11 +61,7 @@ class FrameRingBuffer:
         self._frames.append(frame)
 
     def latest(self) -> ProcessedFrame | None:
-        """Returns the most recently appended frame, or None if empty.
-
-        This is what the plot consumer reads: it always wants the newest frame,
-        not a backlog.
-        """
+        """Returns the most recently appended frame, or None if empty."""
         if not self._frames:
             return None
         return self._frames[-1]
@@ -86,7 +76,7 @@ class FrameRingBuffer:
 
         Returns:
             A new list (safe for the caller to iterate while the buffer keeps
-            changing). Used by the export feature to grab the recent history.
+            changing).
         """
         if count is None:
             return list(self._frames)

@@ -1,15 +1,14 @@
 """Export serialisation.
 
 Turns a list of ProcessedFrame objects (as retained in the ring buffer) into
-CSV or JSON for download. Per the challenge's optional export feature, the
-exported data is the *received data* held in the buffer — i.e. the decimated
-plot samples plus each frame's metadata (number, timestamp, sample count,
-hash, estimated rate).
+CSV or JSON for download. The exported data is whatever the buffer currently
+holds -- decimated plot samples plus each frame's metadata (number, timestamp,
+sample count, hash, estimated rate).
 
 Note on decimation: the buffer stores the plot-decimated samples (~2000 per
 frame), not the raw 20000, to keep memory bounded. Exporting the decimated
-signal is a deliberate trade-off, documented in the README; the spec itself
-notes the raw file size "may be large" and suggests limiting the export.
+signal instead of the raw one is a deliberate trade-off, documented in the
+README.
 
 These functions are pure (list in, string out) so they're unit-testable
 without any web layer or file I/O.

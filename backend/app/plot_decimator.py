@@ -1,14 +1,12 @@
 """Plot decimation.
 
 A frame has 20000 samples; pushing all of them to the browser ~30 times a
-second would be a lot of data and would overwhelm any plotting library. But
-naive decimation (taking every Nth sample) hides spikes between the kept
-samples, which is exactly what you don't want on a signal plot.
+second would overwhelm the plotting library, but naive decimation (every Nth
+sample) hides spikes between the kept samples.
 
-The min/max decimation used here is the classic oscilloscope approach: split
-the samples into as many buckets as target points, and from each bucket keep
-BOTH the minimum and maximum. This preserves the visual envelope of the signal
-(peaks and troughs stay visible) while drastically cutting the point count.
+Min/max decimation avoids that: split the samples into buckets and keep both
+the minimum and maximum of each, preserving the signal's visual envelope while
+cutting the point count.
 """
 
 from __future__ import annotations
@@ -39,8 +37,8 @@ def decimate_minmax(samples: np.ndarray, target_points: int = 2000) -> list[floa
     if n <= target_points:
         return samples.astype(float).tolist()
 
-    # Number of buckets; each contributes a min and a max, so use half the
-    # target so the output stays near target_points.
+    # Each bucket yields a min and a max, so halve the target to stay near
+    # target_points.
     n_buckets = max(1, target_points // 2)
     bucket_size = n // n_buckets
 

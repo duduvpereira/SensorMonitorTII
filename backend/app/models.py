@@ -23,7 +23,7 @@ class ProcessedFrame:
         sample_count: Number of int32 samples actually found in the frame.
         expected_samples: Number of samples a valid frame should contain.
         is_valid: True when sample_count == expected_samples. Drives the
-            "red log line" requirement in the UI.
+            red/error rendering of the log line in the UI.
         frame_hash: XXH3_128 of the raw payload, as a 32-char hex string.
         sample_rate: Estimated samples/second measured at this frame, or None
             for the first frame (no interval to measure yet).
@@ -63,7 +63,7 @@ class ProcessedFrame:
     power_db: float | None = None
 
     def to_log_line(self) -> str:
-        """Formats the frame as the log line required by the challenge.
+        """Formats the frame as the log line shown in the UI.
 
         Format: "[date_and_time]: frame_number | samples | hash"
         e.g. "[2026-08-20 18:00:00]: Frame 1 | 20000 | e2966f42...284ff9d"
@@ -97,8 +97,8 @@ class ProcessedFrame:
 class ConnectionEvent:
     """A lifecycle event for the uC connection, surfaced to the frontend.
 
-    The challenge requires popups when the connection cannot be established or
-    drops mid-stream; this carries that information to the UI layer.
+    Connection failures and drops trigger popups in the UI; this carries the
+    message shown there.
 
     Attributes:
         kind: One of "connected", "connect_failed", "disconnected".

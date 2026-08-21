@@ -1,9 +1,8 @@
 """Frame validation.
 
-The challenge requires validating the total number of samples per frame: if a
-frame's sample count differs from the expected value, its log line must be
-flagged (rendered red in the UI). This module isolates that decision so it can
-be unit-tested without any I/O.
+A frame's log line is flagged (rendered red in the UI) when its sample count
+doesn't match the expected value. Isolated here so it can be unit-tested
+without any I/O.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ def validate_frame(payload: bytes, expected: int = EXPECTED_SAMPLES_PER_FRAME) -
 
     Args:
         payload: Raw bytes of one WebSocket frame.
-        expected: Expected sample count (defaults to the spec's 20000).
+        expected: Expected sample count (defaults to 20000).
 
     Returns:
         A ValidationResult carrying the actual count, the expected count, and

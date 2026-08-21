@@ -4,11 +4,9 @@ The uC streams frames at up to ~100/s, but redrawing the plot that often would
 overwhelm the browser and, counter-intuitively, look *less* smooth: smoothness
 is about a steady frame cadence over time, not raw throughput.
 
-This throttle decouples the plot's render rate from the frame arrival rate. It
-answers one question — "given the current time, is it time to render another
-plot update?" — and nothing else. Log lines are never throttled; every frame
-still produces a log entry, as the spec requires. Only the heavy plot payload
-is gated.
+This throttle decouples the plot's render rate from the frame arrival rate.
+Log lines are never throttled -- every frame still produces one -- only the
+heavy plot payload is gated.
 
 The timestamp is passed in (rather than read from the clock internally) so the
 logic is fully deterministic under test.
