@@ -77,16 +77,6 @@ async def index() -> FileResponse:
     """Serves the single-page frontend."""
     return FileResponse(FRONTEND_DIR / "index.html")
 
-@app.get("/config")
-async def config() -> dict:
-    """Exposes runtime config to the frontend.
-
-    Currently just the suggested default uC URL, so the input can be
-    pre-filled correctly whether running locally (localhost) or under Docker
-    Compose (the mock's service name).
-    """
-    return {"default_uc_url": DEFAULT_UC_URL}
-
 class _SingleClientGuard:
     """Ensures only one frontend WebSocket is served at a time."""
 
