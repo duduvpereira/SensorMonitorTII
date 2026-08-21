@@ -18,11 +18,6 @@ Flow:
 
 Scope: one frontend client at a time (per the challenge's "one client, one
 server" assumption). A second connection is rejected while one is active.
-
-Usage:
-    1. In one terminal:   python -m mock_uc.server --fps 60 --port 8765
-    2. In another:        python -m uvicorn backend.app.main:app --reload --port 8000
-    3. In web browser:    http://localhost:8000
 """
 
 from __future__ import annotations
@@ -32,10 +27,11 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .buffer import FrameRingBuffer
+from .export import frames_to_csv, frames_to_json
 from .models import ConnectionEvent, ProcessedFrame
 from .plot_throttle import PlotThrottle
 from .websocket_client import stream_frames
@@ -53,8 +49,17 @@ PLOT_MAX_FPS = 30.0
 # Target decimated points per plotted frame.
 PLOT_POINTS = 2000
 
+# Nominal uC frame rate (frames/second), used to translate "last N seconds"
+# of the export request into a frame count against the buffer.
+NOMINAL_FPS = 100
+
 
 app = FastAPI(title="Sensor Monitor")
+
+# Shared frame buffer. It lives at app scope (not inside the WebSocket handler)
+# so the HTTP export endpoint can read the recently received frames. With the
+# single-client assumption, one shared buffer is sufficient.
+_buffer = FrameRingBuffer(capacity=BUFFER_CAPACITY)
 
 
 @app.get("/")
@@ -129,7 +134,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.close()
         return
 
-    buffer = FrameRingBuffer(capacity=BUFFER_CAPACITY)
     throttle = PlotThrottle(max_fps=PLOT_MAX_FPS)
     stream_task: asyncio.Task | None = None
 
@@ -143,7 +147,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 if stream_task and not stream_task.done():
                     stream_task.cancel()
                 stream_task = asyncio.create_task(
-                    _relay_uc_stream(websocket, uc_url, buffer, throttle)
+                    _relay_uc_stream(websocket, uc_url, _buffer, throttle)
                 )
 
             elif action == "disconnect":
@@ -161,6 +165,40 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         if stream_task and not stream_task.done():
             stream_task.cancel()
         _guard.release()
+
+
+@app.get("/export")
+async def export(fmt: str = "csv", seconds: float = 5.0) -> Response:
+    """Exports the most recently received frames as CSV or JSON.
+
+    Query params:
+        fmt: "csv" or "json" (defaults to csv).
+        seconds: how many seconds of recent data to export (defaults to 5).
+            Translated to a frame count via NOMINAL_FPS and clamped to what the
+            buffer actually holds.
+
+    Returns the file as an attachment so the browser downloads it. Exports the
+    decimated samples + per-frame metadata currently in the buffer (see
+    export.py for the rationale on decimated vs raw samples).
+    """
+    # Translate "last N seconds" into a frame count.
+    frame_count = max(1, int(seconds * NOMINAL_FPS))
+    frames = _buffer.snapshot(count=frame_count)
+
+    if fmt == "json":
+        body = frames_to_json(frames)
+        media_type = "application/json"
+        filename = "sensor_export.json"
+    else:
+        body = frames_to_csv(frames)
+        media_type = "text/csv"
+        filename = "sensor_export.csv"
+
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # Serve the rest of the frontend assets (app.js, style.css) at the root.

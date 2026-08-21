@@ -2,12 +2,97 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sensor Monitor</title>
+  <link rel="stylesheet" href="vendor/uPlot.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>Sensor Monitor</h1>
-  <p>Frontend placeholder — full UI implemented in the next step.</p>
+  <header class="app-header">
+    <h1>Sensor Monitor</h1>
+    <span id="status-badge" class="status-badge status-idle">Disconnected</span>
+  </header>
+
+  <!-- Connection bar: URL input + Connect/Disconnect -->
+  <section class="connection-bar">
+    <input
+      id="url-input"
+      type="text"
+      class="url-input"
+      value="ws://127.0.0.1:8765"
+      placeholder="ws://x.x.x.x:port"
+      autocomplete="off"
+    />
+    <button id="connect-btn" class="btn btn-connect">Connect</button>
+  </section>
+
+  <main class="layout">
+    <!-- Left column: plot with TD/FD tabs -->
+    <section class="plot-panel">
+      <div class="tabs">
+        <button class="tab" data-tab="fd" disabled title="Frequency domain (optional, later)">FD</button>
+        <button class="tab tab-active" data-tab="td">TD</button>
+      </div>
+
+      <div id="plot-area" class="plot-area">
+        <p id="plot-placeholder" class="plot-placeholder">Connect to start streaming.</p>
+      </div>
+
+      <!-- Bottom controls: sample rate graphical gauge -->
+            <!-- Bottom controls: cursor read-out (left) + sample rate gauge (center) -->
+      <div class="plot-footer">
+        <div class="cursor-readout" id="cursor-readout">
+          <div class="cursor-row"><span class="cursor-key">Index</span><span class="cursor-val" id="cursor-x">—</span></div>
+          <div class="cursor-row"><span class="cursor-key">Amplitude</span><span class="cursor-val" id="cursor-y">—</span></div>
+        </div>
+
+        <div class="gauge-container">
+          <span class="gauge-label">Sample rate</span>
+          <svg class="gauge-svg" width="180" height="104" viewBox="0 0 200 120">
+            <path class="gauge-track" d="M 20 100 A 80 80 0 0 1 180 100" />
+            <path
+              id="gauge-fill"
+              class="gauge-fill"
+              d="M 20 100 A 80 80 0 0 1 180 100"
+              stroke-dasharray="251.3"
+              stroke-dashoffset="251.3"
+            />
+            <text x="100" y="90" text-anchor="middle" class="gauge-value" id="gauge-value">—</text>
+            <text x="100" y="110" text-anchor="middle" class="gauge-unit">Msps</text>
+          </svg>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <!-- Right column: received frames log -->
+    <section class="log-panel">
+      <div class="log-header">
+        <span>Received Frames Log</span>
+        <div class="log-actions">
+          <select id="export-format" class="export-select" title="Export format">
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+          </select>
+          <input id="export-seconds" class="export-seconds" type="number" min="1" max="10" value="5" title="Seconds to export" />
+          <button id="export-btn" class="btn btn-small">Export</button>
+          <button id="clear-log-btn" class="btn btn-small">Clear</button>
+        </div>
+      </div>
+      <div id="log-box" class="log-box" role="log" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <!-- Popup / modal for connection errors and drops -->
+  <div id="popup-overlay" class="popup-overlay hidden">
+    <div class="popup">
+      <p id="popup-title" class="popup-title"></p>
+      <p id="popup-message" class="popup-message"></p>
+      <button id="popup-close-btn" class="btn">OK</button>
+    </div>
+  </div>
+
+  <script src="vendor/uPlot.iife.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
