@@ -11,7 +11,7 @@ on:
 
 jobs:
   unit-tests:
-    name: Unit Tests (pytest)
+    name: Unit Tests and Coverage (pytest)
     runs-on: ubuntu-24.04
 
     steps:
@@ -47,12 +47,18 @@ jobs:
 
 
       # ==========================================================
-      # UNIT TESTS
+      # UNIT TESTS + COVERAGE
       # ==========================================================
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         run: |
-          python -m pytest --junitxml=test-results.xml
+          python -m pytest \
+            --junitxml=test-results.xml \
+            --cov \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            | tee coverage-summary.txt
 
 
       # ==========================================================
@@ -69,6 +75,20 @@ jobs:
 
 
       # ==========================================================
+      # CODE COVERAGE - JOB SUMMARY (Markdown na tela do workflow)
+      # ==========================================================
+
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          echo "## Coverage summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat coverage-summary.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+
+      # ==========================================================
       # UPLOAD TEST RESULTS
       # ==========================================================
 
@@ -78,4 +98,19 @@ jobs:
         with:
           name: test-results
           path: test-results.xml
+          if-no-files-found: warn
+
+
+      # ==========================================================
+      # UPLOAD COVERAGE REPORT (XML + HTML)
+      # ==========================================================
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            htmlcov/
           if-no-files-found: warn
