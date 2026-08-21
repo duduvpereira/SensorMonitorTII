@@ -57,8 +57,8 @@ jobs:
             --cov \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            --cov-report=html:htmlcov \
-            | tee coverage-summary.txt
+            --cov-report=json:coverage.json \
+            --cov-report=html:htmlcov
 
 
       # ==========================================================
@@ -75,17 +75,12 @@ jobs:
 
 
       # ==========================================================
-      # CODE COVERAGE - JOB SUMMARY (Markdown na tela do workflow)
+      # JOB SUMMARY (badge + tabelas coloridas de testes e coverage)
       # ==========================================================
 
-      - name: Publish coverage summary
+      - name: Publish job summary
         if: always()
-        run: |
-          echo "## Coverage summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat coverage-summary.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: python .github/scripts/build_job_summary.py
 
 
       # ==========================================================
@@ -112,5 +107,6 @@ jobs:
           name: coverage-report
           path: |
             coverage.xml
+            coverage.json
             htmlcov/
           if-no-files-found: warn
