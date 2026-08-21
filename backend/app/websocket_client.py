@@ -110,7 +110,11 @@ async def stream_frames(
     estimator = SampleRateEstimator()
 
     try:
-        connection = await websockets.connect(uri, max_size=None)
+        # compression=None: decompressing permessage-deflate would burn CPU per
+        # frame for no gain on incompressible sensor data, and the extension is
+        # only used if *both* ends offer it -- declining here also spares the uC
+        # the compression cost.
+        connection = await websockets.connect(uri, max_size=None, compression=None)
     except (OSError, websockets.InvalidURI, websockets.InvalidHandshake) as exc:
         # Connection could not be established -> frontend shows a popup.
         yield ConnectionEvent(kind="connect_failed", detail=str(exc))

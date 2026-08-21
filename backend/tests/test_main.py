@@ -142,3 +142,25 @@ def test_disconnect_action_stops_stream():
                     saw_disconnect = True
                     break
             assert saw_disconnect
+
+
+def test_export_csv_endpoint():
+    client = TestClient(app)
+    resp = client.get("/export?fmt=csv&seconds=5")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "sensor_export.csv" in resp.headers["content-disposition"]
+    # Body should at least contain the CSV header row.
+    assert "frame_number" in resp.text
+
+
+def test_export_json_endpoint():
+    client = TestClient(app)
+    resp = client.get("/export?fmt=json&seconds=5")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    assert "sensor_export.json" in resp.headers["content-disposition"]
+    body = resp.json()
+    assert "frame_count" in body
+    assert "frames" in body

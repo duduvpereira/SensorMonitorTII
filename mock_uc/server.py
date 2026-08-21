@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import time
 
 import websockets
 
@@ -27,6 +28,12 @@ from .signal_generator import (
 async def _stream_frames(websocket, fps: float, samples_per_frame: int) -> None:
     """Streams synthetic frames to a connected client until it disconnects.
 
+    Paced against absolute deadlines rather than by sleeping a fixed interval
+    after each send. Generating and sending a frame costs real time, so
+    "work, then sleep(interval)" yields a period of `work + interval` and
+    consistently undershoots the target rate. Sleeping only until the next
+    deadline subtracts the work already done and keeps the average on target.
+
     Args:
         websocket: The connected client's WebSocket, used to send frames.
         fps: Target frames per second. ``0`` disables the throttling sleep
@@ -35,13 +42,25 @@ async def _stream_frames(websocket, fps: float, samples_per_frame: int) -> None:
     """
     generator = SignalGenerator(samples_per_frame=samples_per_frame)
     interval = 1.0 / fps if fps > 0 else 0.0
+    next_deadline = time.monotonic()
 
     try:
         while True:
             frame = generator.next_frame()
             await websocket.send(frame)
-            if interval:
-                await asyncio.sleep(interval)
+            if not interval:
+                continue
+
+            next_deadline += interval
+            delay = next_deadline - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            else:
+                # Can't keep up with the requested rate. Rebase the schedule
+                # instead of accumulating debt, which would otherwise be
+                # repaid as a burst of back-to-back frames.
+                next_deadline = time.monotonic()
+                await asyncio.sleep(0)
     except websockets.ConnectionClosed:
         return  # client dropped, nothing else to do
 
@@ -93,7 +112,13 @@ async def main() -> None:
     async def bound_handler(ws):
         await _handler(ws, args.fps, args.samples)
 
-    async with websockets.serve(bound_handler, args.host, args.port, max_size=None):
+    # compression=None: `websockets` negotiates permessage-deflate by default,
+    # which costs ~4 ms of CPU per 80 KB frame here. Sensor data is essentially
+    # incompressible noise, so that CPU buys nothing and caps the achievable
+    # frame rate. The real uC streams raw bytes too.
+    async with websockets.serve(
+        bound_handler, args.host, args.port, max_size=None, compression=None
+    ):
         await asyncio.Future()  # run forever
 
 
