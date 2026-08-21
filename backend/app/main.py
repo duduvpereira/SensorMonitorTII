@@ -1,0 +1,169 @@
+"""FastAPI application: the web layer that ties everything together.
+
+Architecture — the backend is a WebSocket *server* to the browser and a
+WebSocket *client* to the uC at the same time:
+
+    Browser  --WS-->  FastAPI (/ws)  --WS-->  uC / mock
+             <------  frontend<->backend  <------
+
+Flow:
+    1. Browser opens /ws and sends {"action": "connect", "url": "ws://uc:8765"}.
+    2. Backend opens stream_frames() against that URL (the client layer).
+    3. For every ProcessedFrame, the backend sends the log/metadata to the
+       browser; the heavy plot_samples are included only when the time-based
+       throttle allows, keeping the plot smooth without dropping any log line.
+    4. ConnectionEvents (connected / connect_failed / disconnected) are relayed
+       so the frontend can show popups and toggle the Connect button.
+    5. Browser can send {"action": "disconnect"} to stop the stream.
+
+Scope: one frontend client at a time (per the challenge's "one client, one
+server" assumption). A second connection is rejected while one is active.
+
+Usage:
+    1. In one terminal:   python -m mock_uc.server --fps 60 --port 8765
+    2. In another:        python -m uvicorn backend.app.main:app --reload --port 8000
+    3. In web browser:    http://localhost:8000
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from pathlib import Path
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from .buffer import FrameRingBuffer
+from .models import ConnectionEvent, ProcessedFrame
+from .plot_throttle import PlotThrottle
+from .websocket_client import stream_frames
+
+# --- Configuration -----------------------------------------------------------
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+
+# Retain ~10 seconds of frames at the uC's ~100 fps for the optional export.
+BUFFER_CAPACITY = 1000
+
+# Cap the plot at 30 updates/second regardless of arrival rate.
+PLOT_MAX_FPS = 30.0
+
+# Target decimated points per plotted frame.
+PLOT_POINTS = 2000
+
+
+app = FastAPI(title="Sensor Monitor")
+
+
+@app.get("/")
+async def index() -> FileResponse:
+    """Serves the single-page frontend."""
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
+class _SingleClientGuard:
+    """Ensures only one frontend WebSocket is served at a time."""
+
+    def __init__(self) -> None:
+        self._busy = False
+
+    def acquire(self) -> bool:
+        if self._busy:
+            return False
+        self._busy = True
+        return True
+
+    def release(self) -> None:
+        self._busy = False
+
+
+_guard = _SingleClientGuard()
+
+
+async def _relay_uc_stream(
+    frontend_ws: WebSocket,
+    uc_url: str,
+    buffer: FrameRingBuffer,
+    throttle: PlotThrottle,
+) -> None:
+    """Pumps the uC stream to the frontend until it ends or is cancelled.
+
+    Every frame updates the buffer and produces a JSON message; the plot
+    payload is gated by the time throttle so the plot stays smooth. Connection
+    events are forwarded verbatim for the UI popups.
+    """
+    buffer.clear()
+    throttle.reset()
+
+    async for item in stream_frames(uc_url, plot_points=PLOT_POINTS):
+        if isinstance(item, ConnectionEvent):
+            await frontend_ws.send_json(
+                {"type": "event", "kind": item.kind, "detail": item.detail}
+            )
+            # A failed/closed connection ends the stream naturally.
+            continue
+
+        if isinstance(item, ProcessedFrame):
+            buffer.append(item)
+            message = item.to_dict()
+
+            # Throttle only the heavy plot payload; the log line always goes.
+            if not throttle.should_emit(time.monotonic()):
+                message["plot_samples"] = []
+
+            message["type"] = "frame"
+            await frontend_ws.send_json(message)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    """The frontend-facing WebSocket endpoint."""
+    await websocket.accept()
+
+    if not _guard.acquire():
+        await websocket.send_json(
+            {"type": "event", "kind": "busy", "detail": "Another client is connected."}
+        )
+        await websocket.close()
+        return
+
+    buffer = FrameRingBuffer(capacity=BUFFER_CAPACITY)
+    throttle = PlotThrottle(max_fps=PLOT_MAX_FPS)
+    stream_task: asyncio.Task | None = None
+
+    try:
+        while True:
+            command = await websocket.receive_json()
+            action = command.get("action")
+
+            if action == "connect":
+                uc_url = command.get("url", "")
+                if stream_task and not stream_task.done():
+                    stream_task.cancel()
+                stream_task = asyncio.create_task(
+                    _relay_uc_stream(websocket, uc_url, buffer, throttle)
+                )
+
+            elif action == "disconnect":
+                if stream_task and not stream_task.done():
+                    stream_task.cancel()
+                    stream_task = None
+                await websocket.send_json(
+                    {"type": "event", "kind": "disconnected", "detail": "by user"}
+                )
+
+    except WebSocketDisconnect:
+        # Browser closed the tab / navigated away.
+        pass
+    finally:
+        if stream_task and not stream_task.done():
+            stream_task.cancel()
+        _guard.release()
+
+
+# Serve the rest of the frontend assets (app.js, style.css) at the root.
+# Mounted last so it doesn't shadow the routes defined above.
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
