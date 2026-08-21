@@ -32,6 +32,15 @@
       <div class="tabs">
         <button class="tab tab-active" data-tab="td" title="Time domain">TD</button>
         <button class="tab" data-tab="fd" title="Frequency domain (FFT)">FD</button>
+
+        <div class="fd-controls hidden" id="fd-controls">
+          <button
+            id="hold-toggle-btn"
+            class="btn btn-small"
+            title="Max-hold: keep each point's highest value seen since it was turned on"
+          >Hold: Off</button>
+          <button id="hold-reset-btn" class="btn btn-small" title="Clear the max-hold trace">Reset Hold</button>
+        </div>
       </div>
 
       <div id="plot-area" class="plot-area">

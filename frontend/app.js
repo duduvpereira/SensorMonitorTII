@@ -18,6 +18,9 @@ const els = {
   peakVal: document.getElementById("peak-val"),
   powerVal: document.getElementById("power-val"),
   tabs: document.querySelectorAll(".tab"),
+  fdControls: document.getElementById("fd-controls"),
+  holdToggleBtn: document.getElementById("hold-toggle-btn"),
+  holdResetBtn: document.getElementById("hold-reset-btn"),
   popupOverlay: document.getElementById("popup-overlay"),
   popupTitle: document.getElementById("popup-title"),
   popupMessage: document.getElementById("popup-message"),
@@ -46,6 +49,12 @@ let currentDomain = "td";
 // Domain the live uPlot instance was built for; a change forces a rebuild,
 // since the two views have different axes, units and scales.
 let plotDomain = null;
+
+// Max-hold (spectrum-analyzer style): per-point highest magnitude seen since
+// the toggle was last turned on or reset. Purely a frontend concern -- the
+// backend has no notion of "since hold was enabled", it just streams frames.
+let holdEnabled = false;
+let holdData = null;
 
 function backendWsUrl() {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -173,14 +182,26 @@ function createPlot(pointCount, maxHz) {
       isFd
         ? { label: "Magnitude", stroke: "#22c55e", width: 1, points: { show: false } }
         : { label: "Amplitude", stroke: "#3b82f6", width: 1, points: { show: false } },
+      // Third series only exists in FD: max-hold has no meaning against a
+      // scrolling time-domain waveform, only against a spectrum.
+      ...(isFd
+        ? [{ label: "Max Hold", stroke: "#f59e0b", width: 1.5, dash: [5, 4], points: { show: false }, show: holdEnabled }]
+        : []),
     ],
     hooks: {
       setCursor: [(u) => updateCursorReadout(u)]
     },
   };
 
-  const initial = new Array(pointCount).fill(isFd ? FD_DB_RANGE[0] : 0);
-  plot = new uPlot(opts, [plotXBuffer, initial], els.plotArea);
+  const floor = new Array(pointCount).fill(isFd ? FD_DB_RANGE[0] : 0);
+  const initialData = [plotXBuffer, floor];
+  if (isFd) {
+    // Carry over an existing hold trace of the right shape (e.g. the user
+    // switched back from TD); otherwise start flat at the floor.
+    const holdMatches = holdData && holdData.length === pointCount;
+    initialData.push(holdMatches ? holdData.slice() : new Array(pointCount).fill(FD_DB_RANGE[0]));
+  }
+  plot = new uPlot(opts, initialData, els.plotArea);
 }
 
 function updatePlot(values, maxHz) {
@@ -197,7 +218,11 @@ function renderLoop() {
     if (!plot || plotDomain !== currentDomain || plotXBuffer.length !== values.length) {
       createPlot(values.length, maxHz);
     }
-    plot.setData([plotXBuffer, values]);
+    const data = [plotXBuffer, values];
+    if (plotDomain === "fd") {
+      data.push(holdData && holdData.length === values.length ? holdData : values);
+    }
+    plot.setData(data);
   }
   rafId = requestAnimationFrame(renderLoop);
 }
@@ -268,6 +293,52 @@ function resetReadouts() {
 }
 
 // ----------------------------------------------------------------------------
+// MAX-HOLD (FD only)
+// ----------------------------------------------------------------------------
+
+function updateHoldData(values) {
+  if (!holdData || holdData.length !== values.length) {
+    // First frame since enabling, a reset, or a point-count change: seed
+    // from what's on screen rather than starting at the floor, so the trace
+    // doesn't visibly "grow" from nothing on the very first frame.
+    holdData = values.slice();
+    return;
+  }
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] > holdData[i]) holdData[i] = values[i];
+  }
+}
+
+function setHoldSeriesVisible(visible) {
+  if (plot && plotDomain === "fd" && plot.series.length > 2) {
+    plot.setSeries(2, { show: visible });
+  }
+}
+
+function toggleHold() {
+  holdEnabled = !holdEnabled;
+  els.holdToggleBtn.textContent = holdEnabled ? "Hold: On" : "Hold: Off";
+  els.holdToggleBtn.classList.toggle("btn-hold-on", holdEnabled);
+  setHoldSeriesVisible(holdEnabled);
+}
+
+function resetHold() {
+  holdData = null;
+  if (plot && plotDomain === "fd") {
+    // Immediate feedback instead of waiting for the next frame: drop the
+    // trace back to the floor right away.
+    const floor = new Array(plotXBuffer.length).fill(FD_DB_RANGE[0]);
+    plot.setData([plotXBuffer, plot.data[1], floor]);
+  }
+}
+
+function clearHold() {
+  // Used when a connection ends: the next session should start the hold
+  // trace fresh rather than carrying over magnitudes from a previous stream.
+  holdData = null;
+}
+
+// ----------------------------------------------------------------------------
 // DOMAIN (TD / FD) SWITCHING
 // ----------------------------------------------------------------------------
 
@@ -295,6 +366,10 @@ function setDomain(domain) {
   els.peakRow.classList.toggle("hidden", domain !== "fd");
   updatePeakReadout(null, null);
 
+  // Max-hold is an FD-only control; the toggle/reset state itself is left
+  // alone so it's still armed the way the user left it when they come back.
+  els.fdControls.classList.toggle("hidden", domain !== "fd");
+
   // Drop the current chart: the next frame in the new domain rebuilds it with
   // the right axes. Showing the old curve under new axis labels would be
   // actively misleading.
@@ -319,6 +394,7 @@ function handleFrame(msg) {
 
   if (currentDomain === "fd") {
     if (msg.spectrum_db && msg.spectrum_db.length > 0) {
+      if (holdEnabled) updateHoldData(msg.spectrum_db);
       updatePlot(msg.spectrum_db, msg.spectrum_max_hz);
     }
     updatePeakReadout(msg.peak_hz, msg.peak_db);
@@ -349,6 +425,7 @@ function handleEvent(msg) {
       stopRenderLoop();
       resetGauge();
       resetReadouts();
+      clearHold();
       closeSocket();
       if (msg.detail !== "by user") {
         setStatus("Error", "status-error");
@@ -424,6 +501,7 @@ function requestDisconnect() {
   stopRenderLoop();
   resetGauge();
   resetReadouts();
+  clearHold();
   closeSocket();
 }
 
@@ -447,6 +525,9 @@ els.connectBtn.addEventListener("click", () => {
 els.tabs.forEach((tab) => {
   tab.addEventListener("click", () => setDomain(tab.dataset.tab));
 });
+
+els.holdToggleBtn.addEventListener("click", toggleHold);
+els.holdResetBtn.addEventListener("click", resetHold);
 
 els.clearLogBtn.addEventListener("click", () => {
   els.logBox.innerHTML = "";

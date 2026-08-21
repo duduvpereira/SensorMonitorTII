@@ -118,6 +118,11 @@ body {
 .tab-active { background: var(--accent); color: white; }
 .tab:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ---- FD-only controls (max-hold), pinned to the right of the tabs ---- */
+.fd-controls { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+.btn-hold-on { background: var(--warning); color: #1e1500; }
+.btn-hold-on:hover { background: #d97f0a; }
+
 .plot-area {
   flex: 1;
   margin: 10px;
