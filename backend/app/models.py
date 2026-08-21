@@ -29,6 +29,13 @@ class ProcessedFrame:
             for the first frame (no interval to measure yet).
         plot_samples: Down-sampled samples for the real-time plot (never the
             full 20000 — see PlotDecimator). Empty if decimation was skipped.
+        spectrum_db: Magnitudes in dBFS for the frequency-domain view, evenly
+            spaced from DC to spectrum_max_hz. Empty unless the frontend is
+            showing the FD tab — the FFT is only computed when someone is
+            looking at it.
+        spectrum_max_hz: Nyquist frequency the magnitudes span, so the
+            frontend can rebuild the frequency axis without it being resent on
+            every frame. None when no spectrum was computed.
     """
 
     frame_number: int
@@ -39,6 +46,8 @@ class ProcessedFrame:
     frame_hash: str
     sample_rate: float | None
     plot_samples: list[float] = field(default_factory=list)
+    spectrum_db: list[float] = field(default_factory=list)
+    spectrum_max_hz: float | None = None
 
     def to_log_line(self) -> str:
         """Formats the frame as the log line required by the challenge.
@@ -62,6 +71,8 @@ class ProcessedFrame:
             "frame_hash": self.frame_hash,
             "sample_rate": self.sample_rate,
             "plot_samples": self.plot_samples,
+            "spectrum_db": self.spectrum_db,
+            "spectrum_max_hz": self.spectrum_max_hz,
             "log_line": self.to_log_line(),
         }
 

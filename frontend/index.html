@@ -30,20 +30,19 @@
     <!-- Left column: plot with TD/FD tabs -->
     <section class="plot-panel">
       <div class="tabs">
-        <button class="tab" data-tab="fd" disabled title="Frequency domain (optional, later)">FD</button>
-        <button class="tab tab-active" data-tab="td">TD</button>
+        <button class="tab tab-active" data-tab="td" title="Time domain">TD</button>
+        <button class="tab" data-tab="fd" title="Frequency domain (FFT)">FD</button>
       </div>
 
       <div id="plot-area" class="plot-area">
         <p id="plot-placeholder" class="plot-placeholder">Connect to start streaming.</p>
       </div>
 
-      <!-- Bottom controls: sample rate graphical gauge -->
-            <!-- Bottom controls: cursor read-out (left) + sample rate gauge (center) -->
+      <!-- Bottom controls: cursor read-out (left) + sample rate gauge (center) -->
       <div class="plot-footer">
         <div class="cursor-readout" id="cursor-readout">
-          <div class="cursor-row"><span class="cursor-key">Index</span><span class="cursor-val" id="cursor-x">—</span></div>
-          <div class="cursor-row"><span class="cursor-key">Amplitude</span><span class="cursor-val" id="cursor-y">—</span></div>
+          <div class="cursor-row"><span class="cursor-key" id="cursor-x-key">Index</span><span class="cursor-val" id="cursor-x">—</span></div>
+          <div class="cursor-row"><span class="cursor-key" id="cursor-y-key">Amplitude</span><span class="cursor-val" id="cursor-y">—</span></div>
         </div>
 
         <div class="gauge-container">
@@ -61,7 +60,6 @@
             <text x="100" y="110" text-anchor="middle" class="gauge-unit">Msps</text>
           </svg>
         </div>
-      </div>
       </div>
     </section>
 

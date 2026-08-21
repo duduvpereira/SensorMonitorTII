@@ -23,6 +23,7 @@ server" assumption). A second connection is rejected while one is active.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from pathlib import Path
 
@@ -34,7 +35,7 @@ from .buffer import FrameRingBuffer
 from .export import frames_to_csv, frames_to_json
 from .models import ConnectionEvent, ProcessedFrame
 from .plot_throttle import PlotThrottle
-from .websocket_client import stream_frames
+from .websocket_client import StreamOptions, stream_frames
 
 # --- Configuration -----------------------------------------------------------
 
@@ -49,9 +50,18 @@ PLOT_MAX_FPS = 30.0
 # Target decimated points per plotted frame.
 PLOT_POINTS = 2000
 
+# Target points in the frequency-domain spectrum. Half of PLOT_POINTS because
+# the FD view has no min/max pairing -- one point per frequency bucket.
+SPECTRUM_POINTS = 1000
+
 # Nominal uC frame rate (frames/second), used to translate "last N seconds"
 # of the export request into a frame count against the buffer.
 NOMINAL_FPS = 100
+
+# URL the frontend's input box is pre-filled with. Overridable via environment
+# so the same image works in both setups: under Docker Compose the mock uC is
+# reachable by its service name, while a local run uses localhost.
+DEFAULT_UC_URL = os.getenv("SENSOR_MONITOR_UC_URL", "ws://localhost:8765")
 
 
 app = FastAPI(title="Sensor Monitor")
@@ -67,6 +77,15 @@ async def index() -> FileResponse:
     """Serves the single-page frontend."""
     return FileResponse(FRONTEND_DIR / "index.html")
 
+@app.get("/config")
+async def config() -> dict:
+    """Exposes runtime config to the frontend.
+
+    Currently just the suggested default uC URL, so the input can be
+    pre-filled correctly whether running locally (localhost) or under Docker
+    Compose (the mock's service name).
+    """
+    return {"default_uc_url": DEFAULT_UC_URL}
 
 class _SingleClientGuard:
     """Ensures only one frontend WebSocket is served at a time."""
@@ -92,6 +111,7 @@ async def _relay_uc_stream(
     uc_url: str,
     buffer: FrameRingBuffer,
     throttle: PlotThrottle,
+    options: StreamOptions,
 ) -> None:
     """Pumps the uC stream to the frontend until it ends or is cancelled.
 
@@ -102,7 +122,12 @@ async def _relay_uc_stream(
     buffer.clear()
     throttle.reset()
 
-    async for item in stream_frames(uc_url, plot_points=PLOT_POINTS):
+    async for item in stream_frames(
+        uc_url,
+        plot_points=PLOT_POINTS,
+        options=options,
+        spectrum_points=SPECTRUM_POINTS,
+    ):
         if isinstance(item, ConnectionEvent):
             await frontend_ws.send_json(
                 {"type": "event", "kind": item.kind, "detail": item.detail}
@@ -114,9 +139,10 @@ async def _relay_uc_stream(
             buffer.append(item)
             message = item.to_dict()
 
-            # Throttle only the heavy plot payload; the log line always goes.
+            # Throttle only the heavy plot payloads; the log line always goes.
             if not throttle.should_emit(time.monotonic()):
                 message["plot_samples"] = []
+                message["spectrum_db"] = []
 
             message["type"] = "frame"
             await frontend_ws.send_json(message)
@@ -135,6 +161,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         return
 
     throttle = PlotThrottle(max_fps=PLOT_MAX_FPS)
+    options = StreamOptions()
     stream_task: asyncio.Task | None = None
 
     try:
@@ -147,8 +174,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 if stream_task and not stream_task.done():
                     stream_task.cancel()
                 stream_task = asyncio.create_task(
-                    _relay_uc_stream(websocket, uc_url, _buffer, throttle)
+                    _relay_uc_stream(websocket, uc_url, _buffer, throttle, options)
                 )
+
+            elif action == "set_domain":
+                # Mutating the shared options object is enough: the running
+                # stream re-reads it on every frame, so the switch takes effect
+                # on the next one without touching the uC connection.
+                domain = command.get("domain")
+                if domain in ("td", "fd"):
+                    options.domain = domain
 
             elif action == "disconnect":
                 if stream_task and not stream_task.done():

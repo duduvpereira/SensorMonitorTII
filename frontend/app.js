@@ -12,6 +12,9 @@ const els = {
   plotPlaceholder: document.getElementById("plot-placeholder"),
   cursorX: document.getElementById("cursor-x"),
   cursorY: document.getElementById("cursor-y"),
+  cursorXKey: document.getElementById("cursor-x-key"),
+  cursorYKey: document.getElementById("cursor-y-key"),
+  tabs: document.querySelectorAll(".tab"),
   popupOverlay: document.getElementById("popup-overlay"),
   popupTitle: document.getElementById("popup-title"),
   popupMessage: document.getElementById("popup-message"),
@@ -22,12 +25,24 @@ const MAX_LOG_LINES = 500;
 const GAUGE_ARC_LENGTH = 251.3;
 const GAUGE_MAX_MSPS = 2.5;
 
+// Fixed dBFS window for the frequency-domain plot. A spectrum auto-scaled per
+// frame would bounce on every noise fluctuation; a fixed range keeps peaks
+// comparable frame to frame, which is the whole point of watching a spectrum.
+const FD_DB_RANGE = [-160, 0];
+
 let socket = null;
 let connected = false;
 let plot = null;
 let plotXBuffer = [];
-let pendingPlotSamples = null;
+let pendingPlot = null;
 let rafId = null;
+
+// "td" (time domain) or "fd" (frequency domain). The backend only computes the
+// FFT while this is "fd", so it has to be told whenever the tab changes.
+let currentDomain = "td";
+// Domain the live uPlot instance was built for; a change forces a rebuild,
+// since the two views have different axes, units and scales.
+let plotDomain = null;
 
 function backendWsUrl() {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -80,6 +95,12 @@ function fmtCompact(v) {
   return String(v);
 }
 
+function fmtHz(v) {
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + " MHz";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + " kHz";
+  return Math.round(v) + " Hz";
+}
+
 function updateCursorReadout(u) {
   const idx = u.cursor.idx;
   if (idx == null) {
@@ -87,71 +108,93 @@ function updateCursorReadout(u) {
     els.cursorY.textContent = "—";
     return;
   }
-  
+
   const xv = u.data[0][idx];
   const yv = u.data[1][idx];
-  
+
+  if (plotDomain === "fd") {
+    els.cursorX.textContent = xv != null ? fmtHz(xv) : "—";
+    els.cursorY.textContent = yv != null ? yv.toFixed(1) + " dBFS" : "—";
+    return;
+  }
+
   els.cursorX.textContent = xv != null ? String(xv) : "—";
   els.cursorY.textContent = yv != null ? Math.round(yv).toLocaleString() : "—";
 }
 
-function createPlot(pointCount) {
+function createPlot(pointCount, maxHz) {
   if (plot) {
     plot.destroy();
     plot = null;
   }
-  
+
   els.plotArea.querySelectorAll(".uplot").forEach((n) => n.remove());
   if (els.plotPlaceholder) els.plotPlaceholder.style.display = "none";
-  
-  plotXBuffer = Array.from({ length: pointCount }, (_, i) => i);
-  
+
+  plotDomain = currentDomain;
+  const isFd = plotDomain === "fd";
+
+  // In FD the backend sends only the magnitudes; the frequency axis is
+  // rebuilt here from the Nyquist limit, since it is identical on every frame
+  // and resending it 30 times a second would be wasted bandwidth.
+  const step = pointCount > 1 ? maxHz / (pointCount - 1) : 0;
+  plotXBuffer = Array.from({ length: pointCount }, (_, i) => (isFd ? i * step : i));
+
+  const axisStyle = {
+    stroke: "#94a3b8",
+    grid: { stroke: "#1e293b" },
+    ticks: { stroke: "#334155" },
+  };
+
   const opts = {
     width: els.plotArea.clientWidth,
     height: els.plotArea.clientHeight,
     legend: { show: false },
     cursor: { drag: { x: false, y: false } },
-    scales: { x: { time: false } },
+    scales: isFd
+      ? { x: { time: false }, y: { range: FD_DB_RANGE } }
+      : { x: { time: false } },
     axes: [
-      { 
-        stroke: "#94a3b8", 
-        grid: { stroke: "#1e293b" }, 
-        ticks: { stroke: "#334155" } 
-      },
-      { 
-        stroke: "#94a3b8", 
-        grid: { stroke: "#1e293b" }, 
-        ticks: { stroke: "#334155" }, 
-        size: 70, 
-        values: (u, vals) => vals.map(fmtCompact) 
+      isFd
+        ? { ...axisStyle, values: (u, vals) => vals.map(fmtHz) }
+        : { ...axisStyle },
+      {
+        ...axisStyle,
+        size: 70,
+        values: (u, vals) =>
+          vals.map(isFd ? (v) => v + " dB" : fmtCompact),
       },
     ],
     series: [
       {},
-      { label: "Amplitude", stroke: "#3b82f6", width: 1, points: { show: false } },
+      isFd
+        ? { label: "Magnitude", stroke: "#22c55e", width: 1, points: { show: false } }
+        : { label: "Amplitude", stroke: "#3b82f6", width: 1, points: { show: false } },
     ],
     hooks: {
       setCursor: [(u) => updateCursorReadout(u)]
     },
   };
-  
-  plot = new uPlot(opts, [plotXBuffer, new Array(pointCount).fill(0)], els.plotArea);
+
+  const initial = new Array(pointCount).fill(isFd ? FD_DB_RANGE[0] : 0);
+  plot = new uPlot(opts, [plotXBuffer, initial], els.plotArea);
 }
 
-function updatePlot(samples) {
-  if (!samples || samples.length === 0) return;
-  pendingPlotSamples = samples;
+function updatePlot(values, maxHz) {
+  if (!values || values.length === 0) return;
+  pendingPlot = { values, maxHz };
 }
 
 function renderLoop() {
-  if (pendingPlotSamples) {
-    const samples = pendingPlotSamples;
-    pendingPlotSamples = null;
-    
-    if (!plot || plotXBuffer.length !== samples.length) {
-      createPlot(samples.length);
+  if (pendingPlot) {
+    const { values, maxHz } = pendingPlot;
+    pendingPlot = null;
+
+    // Rebuild when the point count changes or the user switched domains.
+    if (!plot || plotDomain !== currentDomain || plotXBuffer.length !== values.length) {
+      createPlot(values.length, maxHz);
     }
-    plot.setData([plotXBuffer, samples]);
+    plot.setData([plotXBuffer, values]);
   }
   rafId = requestAnimationFrame(renderLoop);
 }
@@ -165,7 +208,7 @@ function stopRenderLoop() {
     cancelAnimationFrame(rafId);
     rafId = null;
   }
-  pendingPlotSamples = null;
+  pendingPlot = null;
 }
 
 function resizePlot() {
@@ -202,11 +245,59 @@ function resetGauge() {
   updateGauge(null);
 }
 
-function handleFrame(msg) {
-  appendLogLine(msg.log_line, !msg.is_valid);
-  if (msg.plot_samples && msg.plot_samples.length > 0) {
-    updatePlot(msg.plot_samples);
+// ----------------------------------------------------------------------------
+// DOMAIN (TD / FD) SWITCHING
+// ----------------------------------------------------------------------------
+
+function sendDomain() {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ action: "set_domain", domain: currentDomain }));
   }
+}
+
+function setDomain(domain) {
+  if (domain === currentDomain) return;
+  currentDomain = domain;
+
+  els.tabs.forEach((tab) => {
+    tab.classList.toggle("tab-active", tab.dataset.tab === domain);
+  });
+
+  els.cursorXKey.textContent = domain === "fd" ? "Frequency" : "Index";
+  els.cursorYKey.textContent = domain === "fd" ? "Magnitude" : "Amplitude";
+  els.cursorX.textContent = "—";
+  els.cursorY.textContent = "—";
+
+  // Drop the current chart: the next frame in the new domain rebuilds it with
+  // the right axes. Showing the old curve under new axis labels would be
+  // actively misleading.
+  if (plot) {
+    plot.destroy();
+    plot = null;
+  }
+  plotDomain = null;
+  plotXBuffer = [];
+  pendingPlot = null;
+  if (els.plotPlaceholder) {
+    els.plotPlaceholder.style.display = connected ? "none" : "";
+  }
+
+  sendDomain();
+}
+
+function handleFrame(msg) {
+  // The log line goes up for every frame, in both domains — the spec requires
+  // one entry per frame regardless of what the plot is showing.
+  appendLogLine(msg.log_line, !msg.is_valid);
+
+  if (currentDomain === "fd") {
+    if (msg.spectrum_db && msg.spectrum_db.length > 0) {
+      updatePlot(msg.spectrum_db, msg.spectrum_max_hz);
+    }
+  } else if (msg.plot_samples && msg.plot_samples.length > 0) {
+    updatePlot(msg.plot_samples, null);
+  }
+
   updateGauge(msg.sample_rate);
 }
 
@@ -252,6 +343,9 @@ function openSocketAndConnect(ucUrl) {
   
   socket.addEventListener("open", () => {
     socket.send(JSON.stringify({ action: "connect", url: ucUrl }));
+    // The user may have selected FD before ever connecting; the backend starts
+    // every stream in TD, so tell it which domain this session wants.
+    sendDomain();
     setStatus("Connecting…", "status-idle");
   });
   
@@ -317,6 +411,10 @@ els.connectBtn.addEventListener("click", () => {
     }
     openSocketAndConnect(ucUrl);
   }
+});
+
+els.tabs.forEach((tab) => {
+  tab.addEventListener("click", () => setDomain(tab.dataset.tab));
 });
 
 els.clearLogBtn.addEventListener("click", () => {

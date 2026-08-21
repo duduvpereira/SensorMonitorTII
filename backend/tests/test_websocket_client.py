@@ -86,6 +86,45 @@ def test_to_dict_is_complete():
         "frame_hash",
         "sample_rate",
         "plot_samples",
+        "spectrum_db",
+        "spectrum_max_hz",
         "log_line",
     ):
         assert key in d
+
+
+def test_spectrum_is_skipped_by_default():
+    # The FFT must not run while the user is on the time-domain tab.
+    pf = process_payload(_payload(20000), 1, SampleRateEstimator(), 2000, arrival_time=0.0)
+    assert pf.spectrum_db == []
+    assert pf.spectrum_max_hz is None
+
+
+def test_spectrum_is_computed_when_requested():
+    pf = process_payload(
+        _payload(20000),
+        1,
+        SampleRateEstimator(),
+        2000,
+        arrival_time=0.0,
+        compute_fd=True,
+        spectrum_points=500,
+    )
+    assert len(pf.spectrum_db) == 500
+    assert pf.spectrum_max_hz == 1_000_000.0
+    # Time-domain data is still produced: the export reads it from the buffer
+    # regardless of which tab is being shown.
+    assert len(pf.plot_samples) > 0
+
+
+def test_corrupt_payload_produces_no_spectrum():
+    pf = process_payload(
+        b"\x00\x00\x00\x00\x01",
+        1,
+        SampleRateEstimator(),
+        2000,
+        arrival_time=0.0,
+        compute_fd=True,
+    )
+    assert pf.spectrum_db == []
+    assert pf.spectrum_max_hz is None

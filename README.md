@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
-![Tests](https://img.shields.io/badge/tests-71%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-88%20passing-brightgreen)
 ![Lint](https://img.shields.io/badge/lint-ruff-D7FF64)
 
 A web-based application that connects to a microcontroller (uC) over WebSocket,
@@ -66,6 +66,12 @@ In the GUI, enter the uC's WebSocket URL — `ws://127.0.0.1:8765` for the mock
 **Connect**. The plot, the per-frame log and the sample-rate gauge start
 updating immediately; **Disconnect** stops the stream and re-enables the input.
 
+The **TD / FD** tabs above the plot switch between the time-domain waveform and
+the FFT spectrum (dBFS against frequency). The switch takes effect on the next
+frame without touching the uC connection, and the frame log keeps scrolling in
+both views. With the mock uC, the FD view shows its two synthetic tones at
+5 kHz and 50 kHz.
+
 Drop `--reload` when running outside development.
 
 ### Run the mock microcontroller
@@ -88,7 +94,7 @@ specified for the real hardware).
 ### Run the tests
 
 ```bash
-python -m pytest        # runs the full suite (71 tests)
+python -m pytest        # runs the full suite (88 tests)
 python -m ruff check .  # lint
 ```
 
@@ -161,12 +167,12 @@ flowchart LR
     end
 
     subgraph Browser
-        UI[Web GUI<br/>TD plot · log · gauge · popups]
+        UI[Web GUI<br/>TD/FD plot · log · gauge · popups]
     end
 
     UC -->|~8 MB/s, 20000 samples/frame| WS
-    SRV -->|JSON: frame + log line + plot samples| UI
-    UI -->|connect / disconnect| SRV
+    SRV -->|JSON: frame + log line + plot samples / spectrum| UI
+    UI -->|connect / disconnect / set_domain| SRV
     UI -->|GET /export| SRV
 ```
 
@@ -215,11 +221,12 @@ sample-rate gauge, connection popups and data export.
 - [x] Sample-rate gauge (SVG, Msps, green inside tolerance)
 - [x] Popups for connection failure, mid-stream drop and "server busy"
 - [x] Export controls (format + window in seconds)
-- [ ] Frequency-domain (FFT) tab *(optional — tab present but disabled)*
+- [x] Frequency-domain (FFT) tab *(optional)* — TD/FD switch, dBFS spectrum
+      with a Hz axis, switchable mid-stream
 
 **DevOps / Delivery**
 - [x] CI: GitHub Actions running the full test suite with coverage on every push/PR
-- [x] 71 unit + integration tests
+- [x] 88 unit + integration tests
 - [ ] Dockerfile + docker-compose (backend + mock uC)
 - [ ] Verified install/run on Ubuntu 24.04 / Fedora 42
 
@@ -240,7 +247,7 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | Git commit history | ✅ Done | incremental commits, see `git log` |
 | Runs on Ubuntu 24.04 / Fedora 42 or container | ⬜ Pending | Docker + Linux verification |
 | *(optional)* Data export | ✅ Done | `export.py` + `GET /export` + GUI controls |
-| *(optional)* Frequency-domain plot (FFT) | ⬜ Not started | FD tab present in the UI but disabled |
+| *(optional)* Frequency-domain plot (FFT) | ✅ Done | `spectrum.py` (Hann + rfft, dBFS) → FD tab, computed on demand |
 
 ## Tech Stack
 
@@ -269,6 +276,7 @@ SensorMonitorTII/
 │   │   ├── hashing.py           # XXH3_128 of the raw payload
 │   │   ├── sample_rate.py       # EMA-smoothed sample-rate estimator
 │   │   ├── plot_decimator.py    # min/max decimation for the plot
+│   │   ├── spectrum.py          # FFT / frequency-domain magnitudes in dBFS
 │   │   ├── models.py            # ProcessedFrame, ConnectionEvent
 │   │   ├── buffer.py            # FrameRingBuffer, bounded frame history
 │   │   ├── plot_throttle.py     # caps plot updates at ~30/s
@@ -407,6 +415,25 @@ implementation decision:
     per (frame, sample) pair so it opens in any spreadsheet; JSON keeps the
     nested per-frame arrays. Frames with no plot samples still emit a metadata
     row, so nothing disappears silently from the export.
+
+18. **The FFT runs on raw samples, in the backend, only when someone is
+    looking.** Min/max decimation deliberately distorts the waveform to keep
+    its visual envelope, which destroys spectral content — a spectrum computed
+    from the decimated data the browser receives would be meaningless. So the
+    transform happens in `spectrum.py`, where the raw 20,000 samples still
+    exist. It costs 0.36 ms/frame, cheap but not free, so it only runs while
+    the FD tab is selected: the browser sends `{"action": "set_domain"}` and
+    the running stream re-reads that flag on every frame, switching without
+    reconnecting to the uC.
+
+19. **The frequency axis comes from the acquisition rate, not the measured
+    one.** Bin spacing is a property of how fast the ADC sampled (2 Msps per
+    the spec), while the gauge's estimate measures frame *delivery*. Deriving
+    the axis from the estimate would slide the tones around whenever the
+    network hiccupped. Magnitudes are in dBFS against int32 full scale, so the
+    y-range is bounded by 0 dB and stays fixed instead of rescaling every
+    frame, and buckets keep their **peak** rather than their mean — averaging
+    would flatten the narrow peaks a spectrum exists to reveal.
 
 ## Continuous Integration
 

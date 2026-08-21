@@ -11,7 +11,7 @@ import pytest
 import websockets
 
 from backend.app.models import ConnectionEvent, ProcessedFrame
-from backend.app.websocket_client import stream_frames
+from backend.app.websocket_client import StreamOptions, stream_frames
 from mock_uc.signal_generator import SignalGenerator
 
 
@@ -99,3 +99,40 @@ async def test_mid_stream_drop_emits_disconnected():
     # The disconnected event must come AFTER the frames.
     assert isinstance(events[-1], ConnectionEvent)
     assert events[-1].kind == "disconnected"
+
+
+@pytest.mark.asyncio
+async def test_domain_switch_takes_effect_mid_stream():
+    """Flipping StreamOptions.domain while the stream runs must change what is
+    computed, without reconnecting to the uC. This is what happens when the
+    user clicks the FD tab: the web layer mutates the shared options object.
+    """
+    options = StreamOptions()  # starts in "td"
+
+    async with websockets.serve(_mock_handler, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        uri = f"ws://127.0.0.1:{port}"
+
+        td_frames, fd_frames = [], []
+        async for event in stream_frames(uri, plot_points=500, options=options):
+            if not isinstance(event, ProcessedFrame):
+                continue
+
+            if options.domain == "td":
+                td_frames.append(event)
+                if len(td_frames) >= 2:
+                    options.domain = "fd"  # user clicked the FD tab
+            else:
+                fd_frames.append(event)
+                if len(fd_frames) >= 2:
+                    break
+
+    # Before the switch: no FFT work was done at all.
+    assert all(f.spectrum_db == [] for f in td_frames)
+    assert all(f.spectrum_max_hz is None for f in td_frames)
+
+    # After it: every frame carries a spectrum, and the time-domain data keeps
+    # coming too, so the log and the export are unaffected by the tab choice.
+    assert all(len(f.spectrum_db) > 0 for f in fd_frames)
+    assert all(f.spectrum_max_hz == 1_000_000.0 for f in fd_frames)
+    assert all(len(f.plot_samples) > 0 for f in fd_frames)

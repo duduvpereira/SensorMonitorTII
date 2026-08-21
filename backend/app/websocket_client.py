@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime
 
 import numpy as np
@@ -27,6 +28,25 @@ from .hashing import hash_frame
 from .models import ConnectionEvent, ProcessedFrame
 from .plot_decimator import decimate_minmax
 from .sample_rate import SampleRateEstimator
+from .spectrum import compute_spectrum
+
+
+@dataclass
+class StreamOptions:
+    """Knobs the caller can change while a stream is already running.
+
+    Deliberately mutable, unlike the frozen result models: the user can switch
+    between the time- and frequency-domain tabs mid-stream, and re-opening the
+    uC connection just to change what we compute would drop frames. The web
+    layer holds one of these and flips `domain` when the browser asks.
+
+    Attributes:
+        domain: "td" for time domain (default) or "fd" for frequency domain.
+            The FFT only runs while this is "fd", so nothing is spent on a
+            view nobody is looking at.
+    """
+
+    domain: str = "td"
 
 
 def _now_str() -> str:
@@ -40,6 +60,8 @@ def process_payload(
     estimator: SampleRateEstimator,
     plot_points: int,
     arrival_time: float | None = None,
+    compute_fd: bool = False,
+    spectrum_points: int = 1000,
 ) -> ProcessedFrame:
     """Runs one raw payload through the full processing pipeline.
 
@@ -52,6 +74,10 @@ def process_payload(
         estimator: Sample-rate estimator (stateful across frames).
         plot_points: Target number of decimated points for the plot.
         arrival_time: Monotonic arrival time; defaults to time.monotonic().
+        compute_fd: Whether to also compute the frequency-domain spectrum.
+            Off by default so the FFT costs nothing while the user is on the
+            time-domain tab.
+        spectrum_points: Target number of points in the reduced spectrum.
 
     Returns:
         A fully populated ProcessedFrame.
@@ -65,11 +91,20 @@ def process_payload(
 
     # Only decimate when the payload is a whole number of samples; a corrupt
     # (non-multiple-of-4) payload still gets logged/validated, just not plotted.
+    # The time-domain decimation always runs -- it is cheap, and the export
+    # feature reads it back out of the ring buffer regardless of which tab the
+    # user happens to be on.
     plot_samples: list[float] = []
+    spectrum_db: list[float] = []
+    spectrum_max_hz: float | None = None
     try:
         samples = parse_frame(payload)
         if samples.size:
             plot_samples = decimate_minmax(samples, target_points=plot_points)
+            if compute_fd:
+                spectrum_db, spectrum_max_hz = compute_spectrum(
+                    samples, target_points=spectrum_points
+                )
     except ValueError:
         plot_samples = []
 
@@ -82,6 +117,8 @@ def process_payload(
         frame_hash=frame_hash,
         sample_rate=rate,
         plot_samples=plot_samples,
+        spectrum_db=spectrum_db,
+        spectrum_max_hz=spectrum_max_hz,
     )
 
 
@@ -89,6 +126,8 @@ async def stream_frames(
     uri: str,
     plot_points: int = 2000,
     expected_samples: int = EXPECTED_SAMPLES_PER_FRAME,
+    options: StreamOptions | None = None,
+    spectrum_points: int = 1000,
 ) -> AsyncIterator[ProcessedFrame | ConnectionEvent]:
     """Connects to the uC and yields processed frames and lifecycle events.
 
@@ -106,8 +145,13 @@ async def stream_frames(
         uri: WebSocket URL of the uC, e.g. "ws://192.168.0.10:8765".
         plot_points: Target decimated point count per frame for the plot.
         expected_samples: Expected samples/frame (kept for future configurability).
+        options: Live stream settings the caller may mutate mid-stream (which
+            domain to compute). Defaults to time domain only.
+        spectrum_points: Target point count for the frequency-domain spectrum.
     """
     estimator = SampleRateEstimator()
+    if options is None:
+        options = StreamOptions()
 
     try:
         # compression=None: decompressing permessage-deflate would burn CPU per
@@ -130,11 +174,15 @@ async def stream_frames(
             if isinstance(payload, str):
                 payload = payload.encode("latin-1")
             frame_number += 1
+            # Read the option per frame, not once up front: the user can switch
+            # tabs at any moment and the change must take effect immediately.
             yield process_payload(
                 payload,
                 frame_number=frame_number,
                 estimator=estimator,
                 plot_points=plot_points,
+                compute_fd=options.domain == "fd",
+                spectrum_points=spectrum_points,
             )
     except websockets.ConnectionClosed as exc:
         yield ConnectionEvent(kind="disconnected", detail=str(exc))
