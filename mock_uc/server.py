@@ -1,9 +1,13 @@
-# Fake uC so we can build/test the rest of the pipeline without the real hardware.
-# It just opens a WebSocket and blasts int32_le frames at whoever connects.
-#
-#   python -m mock_uc.server            # ws://0.0.0.0:8765
-#   python -m mock_uc.server --fps 100  # real board runs ~100 fps / 8 MB/s,
-#                                        # we default lower so dev laptops keep up
+"""Mock uC WebSocket server.
+
+Fake uC so we can build/test the rest of the pipeline without the real
+hardware. It just opens a WebSocket and blasts int32_le frames at whoever
+connects.
+
+    python -m mock_uc.server            # ws://0.0.0.0:8765
+    python -m mock_uc.server --fps 100  # real board runs ~100 fps / 8 MB/s,
+                                         # we default lower so dev laptops keep up
+"""
 
 from __future__ import annotations
 
@@ -21,6 +25,14 @@ from .signal_generator import (
 
 
 async def _stream_frames(websocket, fps: float, samples_per_frame: int) -> None:
+    """Streams synthetic frames to a connected client until it disconnects.
+
+    Args:
+        websocket: The connected client's WebSocket, used to send frames.
+        fps: Target frames per second. ``0`` disables the throttling sleep
+            and sends as fast as possible.
+        samples_per_frame: Number of int32 samples to generate per frame.
+    """
     generator = SignalGenerator(samples_per_frame=samples_per_frame)
     interval = 1.0 / fps if fps > 0 else 0.0
 
@@ -35,6 +47,13 @@ async def _stream_frames(websocket, fps: float, samples_per_frame: int) -> None:
 
 
 async def _handler(websocket, fps: float, samples_per_frame: int) -> None:
+    """Handles one client connection: logs it, streams frames, logs the drop.
+
+    Args:
+        websocket: The connected client's WebSocket.
+        fps: Target frames per second, forwarded to `_stream_frames`.
+        samples_per_frame: Samples per frame, forwarded to `_stream_frames`.
+    """
     client = getattr(websocket, "remote_address", "unknown")
     print(f"[mock_uc] client connected: {client}, streaming...")
     await _stream_frames(websocket, fps, samples_per_frame)
@@ -42,6 +61,12 @@ async def _handler(websocket, fps: float, samples_per_frame: int) -> None:
 
 
 async def main() -> None:
+    """Parses CLI arguments and runs the mock uC server until interrupted.
+
+    Reads ``--host``, ``--port``, ``--fps`` and ``--samples`` from the
+    command line, then serves WebSocket connections indefinitely, streaming
+    a fresh synthetic signal to each client that connects.
+    """
     parser = argparse.ArgumentParser(description="Mock uC WebSocket server.")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
