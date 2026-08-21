@@ -81,6 +81,11 @@ testable steps — parse the raw bytes, validate the sample count, hash the
 payload, update the sample-rate estimate, and decimate the signal down to a
 plot-friendly point count — before being pushed to the browser as JSON.
 
+Every frame's metadata (log line, hash, validity, sample rate) is forwarded
+unconditionally; only the heavy `plot_samples` array is gated by a 30 fps
+throttle, so no log entry is ever lost while the plot stays smooth. Recent
+frames are kept in a bounded ring buffer for the optional export feature.
+
 ## Project Status
 
 This repository is under active, incremental development (see commit
@@ -99,14 +104,20 @@ history). Current state:
       uC, runs every frame through the full pipeline, yields frames and
       connection lifecycle events
 - [x] Ring buffer (`FrameRingBuffer`) for the most recent N processed frames
+- [x] Plot throttle (`PlotThrottle`): caps plot updates at ~30/s without ever
+      dropping a log line
 - [x] Manual pipeline demo (`demo_pipeline.py`) exercising the real client
       against a mock uC, no web server involved
-- [x] 51 unit + integration tests, 100% coverage on every module listed above
+- [x] 61 unit + integration tests
 
 **Backend — service layer**
-- [ ] FastAPI app: `/ws` endpoint, static file serving, `/export` endpoint
+- [x] FastAPI app (`backend/app/main.py`): `/ws` endpoint relaying the uC
+      stream to the browser, single-client guard, static file serving
+- [ ] `/export` endpoint (CSV/JSON dump of the ring buffer) *(optional)*
 
 **Frontend**
+- [x] Static assets served by the backend (`frontend/index.html`, `app.js`,
+      `style.css`) — currently a placeholder page
 - [ ] Web GUI (HTML/CSS/vanilla JS): URL input, Connect/Disconnect, popups
 - [ ] Real-time time-domain plot (uPlot)
 - [ ] Per-frame log panel (red line on invalid frame count)
@@ -125,12 +136,12 @@ Mapping the challenge's mandatory requirements to their implementation status:
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| Real-time time-domain plot | Planned | frontend (pending) + `plot_decimator.py` + `stream_frames` (done) |
-| Per-frame log line, exact format | Backend ready | `ProcessedFrame.to_log_line()`, exercised live in `demo_pipeline.py` |
-| URL input + Connect/Disconnect | Planned | frontend (pending); `stream_frames(uri)` already takes the URL |
-| Popup on connection failure | Backend ready | `ConnectionEvent(kind="connect_failed")`, tested against a closed port |
-| Popup on connection drop + re-enable Connect | Backend ready | `ConnectionEvent(kind="disconnected")`, tested against a mid-stream close |
-| Sample-rate gauge, measured per frame | Backend ready | `SampleRateEstimator`, wired into `stream_frames` |
+| Real-time time-domain plot | Backend done, UI pending | `plot_decimator.py` + `PlotThrottle` + `/ws` relay; uPlot rendering pending |
+| Per-frame log line, exact format | Backend done, UI pending | `ProcessedFrame.to_log_line()` / `to_dict()`, sent over `/ws` for every frame |
+| URL input + Connect/Disconnect | Backend done, UI pending | `/ws` accepts `{"action": "connect"\|"disconnect", "url": ...}` |
+| Popup on connection failure | Backend done, UI pending | `ConnectionEvent(kind="connect_failed")` relayed as a `type: "event"` message |
+| Popup on connection drop + re-enable Connect | Backend done, UI pending | `ConnectionEvent(kind="disconnected")`, tested against a mid-stream close |
+| Sample-rate gauge, measured per frame | Backend done, UI pending | `SampleRateEstimator`, wired into `stream_frames` |
 | Validate sample count; red log line on mismatch | Done | `frame_validator.py`, `ProcessedFrame.is_valid` |
 | XXH3_128 hash of raw payload per frame | Done | `hashing.py` |
 | Git commit history | Done | incremental commits, see `git log` |
@@ -138,19 +149,20 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | *(optional)* Frequency-domain plot (FFT) | Not started | — |
 | *(optional)* Data export | Not started | — |
 
-"Backend ready" means the module producing the data/event exists and is
-unit-tested, but is not yet wired into a running server or rendered in a UI.
+"Backend done, UI pending" means the data/event is produced, unit-tested and
+already pushed to the browser over `/ws` — what is missing is the rendering
+layer (plot, log panel, gauge, popups) that consumes it.
 
 ## Tech Stack
 
 | Layer | Technology | Why |
 |---|---|---|
 | Backend language | Python 3.12 | async-first, strong typing support, fast to iterate |
-| Web framework | FastAPI *(planned)* | native async WebSocket support on both client and server sides, needed to act as WS client (to the uC) and WS server (to the browser) simultaneously under a high-throughput stream |
+| Web framework | FastAPI + Uvicorn | native async WebSocket support on both client and server sides, needed to act as WS client (to the uC) and WS server (to the browser) simultaneously under a high-throughput stream |
 | WebSocket client | `websockets` | connects to the uC as a client |
 | Binary parsing | NumPy | zero-copy `int32_le` parsing and vectorised min/max decimation at ~100 frames/s |
 | Hashing | `xxhash` (XXH3_128) | required by the spec, extremely fast on binary payloads |
-| Frontend | HTML + CSS + vanilla JS *(planned)* | no framework overhead needed for the scope; keeps the app self-contained for offline LAN testing |
+| Frontend | HTML + CSS + vanilla JS | no framework overhead needed for the scope; keeps the app self-contained for offline LAN testing |
 | Plot | uPlot *(planned, vendored offline)* | lightweight, canvas-based, built for high-frequency real-time updates |
 | Testing | pytest, pytest-asyncio, pytest-cov | unit + async pipeline testing with coverage |
 | Static analysis | ruff | fast linting, single tool for style + common bugs |
@@ -170,9 +182,15 @@ SensorMonitorTII/
 │   │   ├── plot_decimator.py    # min/max decimation for the plot
 │   │   ├── models.py            # ProcessedFrame, ConnectionEvent
 │   │   ├── buffer.py            # FrameRingBuffer, bounded frame history
-│   │   └── websocket_client.py  # connects to the uC, runs the full pipeline
+│   │   ├── plot_throttle.py     # caps plot updates at ~30/s
+│   │   ├── websocket_client.py  # connects to the uC, runs the full pipeline
+│   │   └── main.py              # FastAPI app: /ws relay + static frontend
 │   └── tests/                   # one test module per backend module,
 │                                 # plus integration tests against a live mock uC
+├── frontend/
+│   ├── index.html                # single-page GUI (served at /)
+│   ├── app.js                    # WebSocket client, plot, log, gauge
+│   └── style.css
 ├── mock_uc/
 │   ├── server.py                 # mock uC: WebSocket server
 │   └── signal_generator.py       # synthetic signal (sine tones + noise)
@@ -256,6 +274,27 @@ implementation decision:
     consumer's job, keeping the buffer a simple, fully-testable data
     structure with no timing behaviour.
 
+12. **Throttle the plot, never the log.** The uC delivers up to ~100 frames/s,
+    but redrawing the canvas that often would overwhelm the browser and look
+    *less* smooth, since smoothness comes from a steady cadence rather than raw
+    throughput. `PlotThrottle` caps the heavy `plot_samples` payload at 30
+    updates/second; every frame still produces a full log message with its
+    hash, sample count and rate, exactly as the spec requires. The throttle
+    takes the current time as an argument instead of reading the clock, so its
+    behaviour is fully deterministic under test.
+
+13. **One frontend client at a time.** The challenge describes a single
+    operator watching a single uC, so `/ws` guards against a second browser
+    session (`_SingleClientGuard`) and replies with a `busy` event instead of
+    silently multiplexing one uC stream across tabs — which would double the
+    outbound bandwidth and make the "who owns the Connect button" question
+    ambiguous.
+
+14. **The uC stream runs as a cancellable task.** `/ws` keeps receiving browser
+    commands while `_relay_uc_stream()` pumps data in an `asyncio.Task`, so a
+    `disconnect` command (or a new `connect`) takes effect immediately rather
+    than waiting for the current stream to end on its own.
+
 ## Getting Started
 
 ### Prerequisites
@@ -268,13 +307,41 @@ implementation decision:
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt   # runtime deps + pytest/ruff
 ```
+
+To install only what the application itself needs, use
+`pip install -r requirements.txt`.
+
+### Run the application
+
+Three steps — the mock uC, the backend, and the browser:
+
+```bash
+# 1. In one terminal: start the mock microcontroller
+python -m mock_uc.server --fps 60 --port 8765
+
+# 2. In another terminal: start the backend (FastAPI + Uvicorn)
+python -m uvicorn backend.app.main:app --reload --port 8000
+
+# 3. In a web browser: open the GUI
+#    http://localhost:8000
+```
+
+Drop `--reload` when running outside development.
+
+> **Current state:** step 3 serves a placeholder page — the URL input and the
+> **Connect** button are not implemented yet (see
+> [Project Status](#project-status)). The backend behind it is complete: it
+> already accepts `{"action": "connect", "url": "ws://localhost:8765"}` on
+> `/ws` and streams processed frames back. Until the GUI lands, the easiest
+> way to see the pipeline running end-to-end is the
+> [pipeline demo](#run-the-pipeline-demo) below.
 
 ### Run the tests
 
 ```bash
-python -m pytest        # runs the full suite (51 tests)
+python -m pytest        # runs the full suite (61 tests)
 python -m ruff check .  # lint
 ```
 
@@ -310,11 +377,6 @@ eventually forward to the frontend: the spec-formatted log line, validity,
 estimated sample rate, and the decimated plot-point count — a quick way to
 confirm the whole pipeline (parse → validate → hash → sample-rate →
 decimate) works against a live source.
-
-> The full web application (FastAPI server + browser GUI) is still under
-> development — see [Project Status](#project-status). This README will be
-> updated with end-to-end run instructions once `backend/app/main.py` and
-> the frontend land.
 
 ## Continuous Integration
 
