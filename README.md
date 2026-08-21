@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
-![Tests](https://img.shields.io/badge/tests-69%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-71%20passing-brightgreen)
 ![Lint](https://img.shields.io/badge/lint-ruff-D7FF64)
 
 A web-based application that connects to a microcontroller (uC) over WebSocket,
@@ -88,7 +88,7 @@ specified for the real hardware).
 ### Run the tests
 
 ```bash
-python -m pytest        # runs the full suite (69 tests)
+python -m pytest        # runs the full suite (71 tests)
 python -m ruff check .  # lint
 ```
 
@@ -219,7 +219,7 @@ sample-rate gauge, connection popups and data export.
 
 **DevOps / Delivery**
 - [x] CI: GitHub Actions running the full test suite with coverage on every push/PR
-- [x] 69 unit + integration tests
+- [x] 71 unit + integration tests
 - [ ] Dockerfile + docker-compose (backend + mock uC)
 - [ ] Verified install/run on Ubuntu 24.04 / Fedora 42
 
@@ -411,7 +411,17 @@ implementation decision:
 ## Continuous Integration
 
 Every push and pull request runs the **Sensor Monitor CI** workflow
-(`.github/workflows/ci.yml`) on `ubuntu-24.04`:
+(`.github/workflows/ci.yml`) on `ubuntu-24.04`, as two independent jobs that
+run in parallel.
+
+### `lint` — ruff
+
+Runs `ruff check .` with `--output-format=github`, so any finding appears as an
+inline annotation on the offending line in the PR diff rather than buried in
+the log. It is a separate job on purpose: a style slip fails its own check
+without hiding the test results, and vice versa.
+
+### `unit-tests` — pytest + coverage
 
 1. **Checkout** the repository.
 2. **Set up Python 3.12** with pip caching keyed on `requirements-dev.txt`.

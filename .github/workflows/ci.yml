@@ -10,6 +10,41 @@ on:
       - "**"
 
 jobs:
+
+  # ============================================================
+  # LINT
+  # ============================================================
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # --output-format=github turns each finding into an inline annotation
+      # on the changed lines, instead of a plain log line.
+      - name: Run ruff
+        run: python -m ruff check . --output-format=github
+
+
+  # ============================================================
+  # UNIT TESTS
+  # ============================================================
+
   unit-tests:
     name: Unit Tests and Coverage (pytest)
     runs-on: ubuntu-24.04

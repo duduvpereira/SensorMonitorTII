@@ -50,7 +50,10 @@ def build_test_section() -> list[str]:
 
         name = suite.get("name") or "pytest"
         mark = "✅" if (failures + errors) == 0 else "❌"
-        rows.append(f"| {name} | {tests} | {passed} {mark} | {failures + errors} | {skipped} | {time:.2f}s |")
+        rows.append(
+            f"| {name} | {tests} | {passed} {mark} | {failures + errors} "
+            f"| {skipped} | {time:.2f}s |"
+        )
 
     failed = total_failures + total_errors
     if failed == 0:
