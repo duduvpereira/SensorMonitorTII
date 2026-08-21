@@ -1,0 +1,38 @@
+# Brings up the web application together with the mock uC, so the whole thing
+# can be demonstrated with a single `docker compose up` — no physical hardware
+# needed. Both services share the default compose network, so the app reaches
+# the mock by its service name (mock-uc).
+#
+# To point the app at a REAL uC instead, just don't start the mock and type the
+# real uC's ws:// URL in the UI. The app container doesn't depend on the mock.
+
+services:
+  app:
+    build: .
+    image: sensor-monitor:latest
+    container_name: sensor-monitor-app
+    ports:
+      - "8000:8000" # http://localhost:8000
+    environment:
+      # It is the *backend* that opens the uC connection, not the browser, so
+      # this resolves on the compose network. The UI's URL field is pre-filled
+      # with it via /config.
+      SENSOR_MONITOR_UC_URL: "ws://mock-uc:8765"
+    depends_on:
+      - mock-uc
+    restart: unless-stopped
+
+  mock-uc:
+    build: .
+    image: sensor-monitor:latest
+    container_name: sensor-monitor-mock
+    # Reuse the same image; just run the mock server module instead of uvicorn.
+    command: >
+      python -m mock_uc.server
+      --host 0.0.0.0
+      --port 8765
+      --fps 100
+    ports:
+      - "8765:8765" # exposed so the browser-entered ws:// URL can also be
+                    # ws://localhost:8765 when testing from the host
+    restart: unless-stopped

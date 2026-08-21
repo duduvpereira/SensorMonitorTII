@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
-![Tests](https://img.shields.io/badge/tests-88%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-89%20passing-brightgreen)
 ![Lint](https://img.shields.io/badge/lint-ruff-D7FF64)
 
 A web-based application that connects to a microcontroller (uC) over WebSocket,
@@ -17,6 +17,8 @@ challenge.
 ## Table of Contents
 
 - [Getting Started](#getting-started)
+  - [Run with Docker (recommended)](#run-with-docker-recommended)
+  - [Run locally with Python](#run-locally-with-python)
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Project Status](#project-status)
@@ -30,12 +32,86 @@ challenge.
 
 ## Getting Started
 
-### Prerequisites
+There are two ways to run the application, and both end up serving the same UI
+at <http://localhost:8000>:
+
+| | What you need | Best for |
+|---|---|---|
+| [**Docker**](#run-with-docker-recommended) | Docker Engine only | running or evaluating the app |
+| [**Local Python**](#run-locally-with-python) | Python 3.12+ | developing, running the tests |
+
+### Run with Docker (recommended)
+
+#### Prerequisites
+
+Docker Engine with the Compose plugin — that is, `docker compose` (v2), not the
+older standalone `docker-compose` binary. Nothing else: Python, the
+dependencies and the mock microcontroller all live inside the image.
+
+```bash
+docker --version          # expect 24.x or newer
+docker compose version    # expect v2.x
+```
+
+If those commands are not found, install Docker Engine from the **official
+documentation for your distribution** — <https://docs.docker.com/engine/install/>
+(direct links: [Ubuntu](https://docs.docker.com/engine/install/ubuntu/),
+[Fedora](https://docs.docker.com/engine/install/fedora/)). A condensed,
+copy-pasteable version of those steps for Ubuntu 24.04 and Fedora 42, including
+the optional "run Docker without `sudo`" step, is kept in
+[`docs/install-docker.md`](docs/install-docker.md).
+
+#### Bring up the stack
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+That builds one image and starts two containers from it:
+
+| Service | Container | Port | Role |
+|---|---|---|---|
+| `app` | `sensor-monitor-app` | `8000` | FastAPI + Uvicorn, serves the GUI and the frontend WebSocket |
+| `mock-uc` | `sensor-monitor-mock` | `8765` | the mock microcontroller, streaming at `--fps 100` (2 Msps) |
+
+Then open <http://localhost:8000>. The URL field arrives pre-filled with
+`ws://mock-uc:8765` — the mock's name on the Compose network — so you can press
+**Connect** straight away.
+
+> The uC connection is opened by the **backend**, not by the browser, so the URL
+> is resolved inside the `app` container. `ws://localhost:8765` would point at
+> the app container itself and fail; use the service name. Port 8765 is still
+> published on the host so tools running outside Docker (such as
+> `demo_pipeline.py`) can reach the mock.
+
+Useful variations:
+
+```bash
+docker compose up --build -d      # detached
+docker compose logs -f app        # follow the backend's logs
+docker compose down               # stop and remove the containers
+docker compose up --build --no-deps app   # app only, to use REAL hardware
+```
+
+To drive **real hardware**, start the `app` service alone (last line above —
+`--no-deps` is what keeps Compose from pulling the mock in as well) and type the
+board's own URL, `ws://<board-ip>:8765`, into the GUI. The app has no runtime
+dependency on the mock.
+
+To change the mock's frame rate, edit the `--fps` value in the `mock-uc`
+service's `command:` in [`docker-compose.yml`](docker-compose.yml) and re-run
+`docker compose up`.
+
+### Run locally with Python
+
+#### Prerequisites
 
 - Python 3.12+
 - (recommended) a virtual environment
 
-### Setup
+#### Setup
 
 ```bash
 python -m venv .venv
@@ -46,7 +122,7 @@ pip install -r requirements-dev.txt   # runtime deps + pytest/ruff
 To install only what the application itself needs, use
 `pip install -r requirements.txt`.
 
-### Run the application
+#### Run the application
 
 Three steps — the mock uC, the backend, and the browser:
 
@@ -61,7 +137,7 @@ python -m uvicorn backend.app.main:app --reload --port 8000
 #    http://localhost:8000
 ```
 
-In the GUI, enter the uC's WebSocket URL — `ws://127.0.0.1:8765` for the mock
+In the GUI, enter the uC's WebSocket URL — `ws://localhost:8765` for the mock
 (pre-filled), or `ws://<board-ip>:8765` for real hardware — and press
 **Connect**. The plot, the per-frame log and the sample-rate gauge start
 updating immediately; **Disconnect** stops the stream and re-enables the input.
@@ -74,7 +150,7 @@ both views. With the mock uC, the FD view shows its two synthetic tones at
 
 Drop `--reload` when running outside development.
 
-### Run the mock microcontroller
+#### Run the mock microcontroller
 
 ```bash
 python -m mock_uc.server --fps 100 --port 8765
@@ -91,14 +167,17 @@ Since each frame carries 20,000 samples, the rate shown on the gauge is
 `fps ÷ 50` Msps: `--fps 30` → 0.60 Msps, `--fps 100` → 2.00 Msps (the value
 specified for the real hardware).
 
-### Run the tests
+#### Run the tests
+
+The suite runs against the local environment, not the container — the test and
+lint tooling is deliberately kept out of the image:
 
 ```bash
-python -m pytest        # runs the full suite (88 tests)
+python -m pytest        # runs the full suite (89 tests)
 python -m ruff check .  # lint
 ```
 
-### Run the pipeline demo
+#### Run the pipeline demo
 
 With a mock uC already running, the real WebSocket client can be exercised
 end-to-end — no browser or web server needed:
@@ -226,8 +305,8 @@ sample-rate gauge, connection popups and data export.
 
 **DevOps / Delivery**
 - [x] CI: GitHub Actions running the full test suite with coverage on every push/PR
-- [x] 88 unit + integration tests
-- [ ] Dockerfile + docker-compose (backend + mock uC)
+- [x] 89 unit + integration tests
+- [x] Dockerfile (multi-stage, non-root) + docker-compose (backend + mock uC)
 - [ ] Verified install/run on Ubuntu 24.04 / Fedora 42
 
 ## Requirements Traceability
@@ -245,7 +324,7 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | Validate sample count; red log line on mismatch | ✅ Done | `frame_validator.py` → `.log-line-error` |
 | XXH3_128 hash of raw payload per frame | ✅ Done | `hashing.py` |
 | Git commit history | ✅ Done | incremental commits, see `git log` |
-| Runs on Ubuntu 24.04 / Fedora 42 or container | ⬜ Pending | Docker + Linux verification |
+| Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml`; see [Run with Docker](#run-with-docker-recommended) |
 | *(optional)* Data export | ✅ Done | `export.py` + `GET /export` + GUI controls |
 | *(optional)* Frequency-domain plot (FFT) | ✅ Done | `spectrum.py` (Hann + rfft, dBFS) → FD tab, computed on demand |
 
@@ -296,6 +375,11 @@ SensorMonitorTII/
 ├── .github/
 │   ├── workflows/ci.yml          # test + coverage CI pipeline
 │   └── scripts/build_job_summary.py  # renders the CI job summary
+├── docs/
+│   └── install-docker.md         # Docker Engine install steps (Ubuntu / Fedora)
+├── Dockerfile                    # multi-stage build, non-root runtime image
+├── docker-compose.yml            # app + mock uC, one command to run everything
+├── .dockerignore                 # keeps tests/docs/caches out of the image
 ├── demo_pipeline.py               # manual dev script: real client + mock uC, no web server
 ├── pyproject.toml                # pytest / coverage / ruff configuration
 ├── requirements.txt               # runtime dependencies
@@ -434,6 +518,23 @@ implementation decision:
     y-range is bounded by 0 dB and stays fixed instead of rescaling every
     frame, and buckets keep their **peak** rather than their mean — averaging
     would flatten the narrow peaks a spectrum exists to reveal.
+
+20. **One image, two services.** The app and the mock uC are the same build,
+    differing only in the command Compose runs — the mock is a development
+    tool, not a second product, and giving it its own Dockerfile would mean
+    maintaining two dependency sets for one `requirements.txt`. The build is
+    multi-stage (the venv is assembled in a builder stage and copied into a
+    clean `python:3.12-slim`), so pip and its caches never reach the runtime
+    image, and the process runs as a non-root user. `app` deliberately does
+    **not** hard-depend on the mock: pointing the GUI at real hardware is a
+    matter of not starting the mock service.
+
+21. **The uC URL is served from `/config`, not baked into the HTML.** The
+    correct default differs per deployment — `ws://localhost:8765` for a local
+    run, `ws://mock-uc:8765` inside Compose, where the *backend* is the one
+    resolving the name. The frontend fetches it on load and overwrites the
+    field only if the user has not typed into it yet, so the same static
+    assets and the same image serve both cases with no rebuild.
 
 ## Continuous Integration
 

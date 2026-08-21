@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+
+# Python caches / envs
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Dev/test artifacts not needed at runtime
+backend/tests/
+demo_pipeline.py
+
+# Accidental downloads (wheels/sdists in repo root)
+*.whl
+*.tar.gz
+
+# Docs / CI (not needed inside the image)
+docs/
+.github/
+*.md
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
