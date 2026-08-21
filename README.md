@@ -95,11 +95,15 @@ history). Current state:
 - [x] Sample-rate estimation (EMA-smoothed, per-frame)
 - [x] Plot decimation (min/max, oscilloscope-style envelope)
 - [x] Shared data models (`ProcessedFrame`, `ConnectionEvent`)
-- [x] 28 unit tests, 100% coverage on every module listed above
+- [x] WebSocket client + streaming pipeline (`stream_frames`): connects to the
+      uC, runs every frame through the full pipeline, yields frames and
+      connection lifecycle events
+- [x] Ring buffer (`FrameRingBuffer`) for the most recent N processed frames
+- [x] Manual pipeline demo (`demo_pipeline.py`) exercising the real client
+      against a mock uC, no web server involved
+- [x] 51 unit + integration tests, 100% coverage on every module listed above
 
 **Backend — service layer**
-- [ ] WebSocket client / streaming pipeline wiring
-- [ ] Ring buffer for received frames
 - [ ] FastAPI app: `/ws` endpoint, static file serving, `/export` endpoint
 
 **Frontend**
@@ -121,12 +125,12 @@ Mapping the challenge's mandatory requirements to their implementation status:
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| Real-time time-domain plot | Planned | frontend (pending) + `plot_decimator.py` (done) |
-| Per-frame log line, exact format | Backend ready | `ProcessedFrame.to_log_line()` |
-| URL input + Connect/Disconnect | Planned | frontend (pending) |
-| Popup on connection failure | Backend ready | `ConnectionEvent(kind="connect_failed")` |
-| Popup on connection drop + re-enable Connect | Backend ready | `ConnectionEvent(kind="disconnected")` |
-| Sample-rate gauge, measured per frame | Backend ready | `SampleRateEstimator` |
+| Real-time time-domain plot | Planned | frontend (pending) + `plot_decimator.py` + `stream_frames` (done) |
+| Per-frame log line, exact format | Backend ready | `ProcessedFrame.to_log_line()`, exercised live in `demo_pipeline.py` |
+| URL input + Connect/Disconnect | Planned | frontend (pending); `stream_frames(uri)` already takes the URL |
+| Popup on connection failure | Backend ready | `ConnectionEvent(kind="connect_failed")`, tested against a closed port |
+| Popup on connection drop + re-enable Connect | Backend ready | `ConnectionEvent(kind="disconnected")`, tested against a mid-stream close |
+| Sample-rate gauge, measured per frame | Backend ready | `SampleRateEstimator`, wired into `stream_frames` |
 | Validate sample count; red log line on mismatch | Done | `frame_validator.py`, `ProcessedFrame.is_valid` |
 | XXH3_128 hash of raw payload per frame | Done | `hashing.py` |
 | Git commit history | Done | incremental commits, see `git log` |
@@ -164,14 +168,18 @@ SensorMonitorTII/
 │   │   ├── hashing.py           # XXH3_128 of the raw payload
 │   │   ├── sample_rate.py       # EMA-smoothed sample-rate estimator
 │   │   ├── plot_decimator.py    # min/max decimation for the plot
-│   │   └── models.py            # ProcessedFrame, ConnectionEvent
-│   └── tests/                   # one test module per backend module
+│   │   ├── models.py            # ProcessedFrame, ConnectionEvent
+│   │   ├── buffer.py            # FrameRingBuffer, bounded frame history
+│   │   └── websocket_client.py  # connects to the uC, runs the full pipeline
+│   └── tests/                   # one test module per backend module,
+│                                 # plus integration tests against a live mock uC
 ├── mock_uc/
 │   ├── server.py                 # mock uC: WebSocket server
 │   └── signal_generator.py       # synthetic signal (sine tones + noise)
 ├── .github/
 │   ├── workflows/ci.yml          # test + coverage CI pipeline
 │   └── scripts/build_job_summary.py  # renders the CI job summary
+├── demo_pipeline.py               # manual dev script: real client + mock uC, no web server
 ├── pyproject.toml                # pytest / coverage / ruff configuration
 ├── requirements.txt               # runtime dependencies
 ├── requirements-dev.txt           # + testing/lint dependencies
@@ -232,6 +240,22 @@ implementation decision:
    so each one is covered by fast, deterministic unit tests independent of
    the WebSocket plumbing.
 
+10. **The pipeline knows nothing about the web framework.** `stream_frames()`
+    is a plain `async` generator that yields `ProcessedFrame`/`ConnectionEvent`
+    objects — it has no dependency on FastAPI or any web server. This lets it
+    be driven by a plain test harness (see `test_stream_integration.py`) and
+    by `demo_pipeline.py` today, and by the FastAPI `/ws` route once that
+    layer is built, without changing the pipeline itself.
+
+11. **Ring buffer, not an unbounded list.** `FrameRingBuffer` is a fixed-
+    capacity `collections.deque` of `ProcessedFrame`s: O(1) append that
+    evicts the oldest frame once full, so memory stays bounded no matter how
+    long a connection stays open, while still keeping enough recent history
+    for the optional "export last N seconds" feature. It intentionally does
+    no rate-limiting itself — *when* to read the latest frame is the
+    consumer's job, keeping the buffer a simple, fully-testable data
+    structure with no timing behaviour.
+
 ## Getting Started
 
 ### Prerequisites
@@ -250,7 +274,7 @@ pip install -r requirements-dev.txt
 ### Run the tests
 
 ```bash
-python -m pytest        # runs the full suite (28 tests)
+python -m pytest        # runs the full suite (51 tests)
 python -m ruff check .  # lint
 ```
 
@@ -269,7 +293,25 @@ Flags:
 | `--fps` | `30` | frames/second (real uC is ~100; lowered by default so dev laptops keep up) |
 | `--samples` | `20000` | samples per frame — set to something else (e.g. `19999`) to emit invalid frames on purpose |
 
-> The full application (FastAPI server + web GUI) is still under
+### Run the pipeline demo
+
+With a mock uC already running (see above), the real WebSocket client can be
+exercised end-to-end — no browser or web server needed:
+
+```bash
+python -m mock_uc.server --fps 40 --port 8811   # terminal 1
+python demo_pipeline.py                         # terminal 2, defaults to ws://127.0.0.1:8811
+# or against a custom target:
+python demo_pipeline.py ws://HOST:PORT
+```
+
+It prints, for a handful of received frames, exactly what the backend will
+eventually forward to the frontend: the spec-formatted log line, validity,
+estimated sample rate, and the decimated plot-point count — a quick way to
+confirm the whole pipeline (parse → validate → hash → sample-rate →
+decimate) works against a live source.
+
+> The full web application (FastAPI server + browser GUI) is still under
 > development — see [Project Status](#project-status). This README will be
 > updated with end-to-end run instructions once `backend/app/main.py` and
 > the frontend land.
