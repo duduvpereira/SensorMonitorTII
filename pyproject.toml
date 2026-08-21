@@ -1,0 +1,35 @@
+[project]
+name = "sensor-monitor"
+version = "0.1.0"
+description = "Real-time sensor signal monitor (WebSocket client + web GUI)."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
+addopts = "-v"
+asyncio_mode = "auto"
+# Ensure the project root is importable so backend.app... and mock_uc...
+# resolve during tests.
+pythonpath = ["."]
+# The mock uC server (websockets lib) emits a harmless teardown warning when
+# its background event loop is stopped at the end of integration tests. It does
+# not affect results; filter it so test output stays clean.
+filterwarnings = [
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.coverage.run]
+source = ["backend/app", "mock_uc"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
