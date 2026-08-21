@@ -22,20 +22,36 @@ server" assumption). A second connection is rejected while one is active.
 
 from __future__ import annotations
 
-import asyncio
-import os
-import time
-from pathlib import Path
+import sys
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
+# Checked before any third-party import: on too old an interpreter, pip
+# either can't resolve numpy>=2.0 at all (aborting the whole install) or, if
+# an unpinned older one slipped in some other way, things may still "work"
+# but not as tested. Either way this is a clearer failure than a
+# ModuleNotFoundError or a version-specific bug turning up later. Runs at
+# import time since uvicorn imports this module rather than executing it.
+if sys.version_info < (3, 12):  # noqa: UP036 -- deliberately reachable on old interpreters
+    sys.exit(
+        "Sensor Monitor requires Python 3.12+, but this interpreter is "
+        f"{sys.version_info.major}.{sys.version_info.minor}.\n"
+        "See README.md > Getting Started for how to install 3.12, or run "
+        "with Docker instead: docker compose up --build"
+    )
 
-from .buffer import FrameRingBuffer
-from .export import frames_to_csv, frames_to_json
-from .models import ConnectionEvent, ProcessedFrame
-from .plot_throttle import PlotThrottle
-from .websocket_client import StreamOptions, stream_frames
+import asyncio  # noqa: E402
+import os  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect  # noqa: E402
+from fastapi.responses import FileResponse, Response  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+from .buffer import FrameRingBuffer  # noqa: E402
+from .export import frames_to_csv, frames_to_json  # noqa: E402
+from .models import ConnectionEvent, ProcessedFrame  # noqa: E402
+from .plot_throttle import PlotThrottle  # noqa: E402
+from .websocket_client import StreamOptions, stream_frames  # noqa: E402
 
 # --- Configuration -----------------------------------------------------------
 

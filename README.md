@@ -113,14 +113,43 @@ service's `command:` in [`docker-compose.yml`](docker-compose.yml) and re-run
 
 #### Setup
 
+**Linux / macOS** — `./setup.sh` finds a Python 3.12+ interpreter on the
+machine (a plain `python3` isn't guaranteed to be new enough — see the note
+below), creates `.venv` with it, and installs the dev dependencies:
+
 ```bash
-python -m venv .venv
+./setup.sh
+source .venv/bin/activate
+```
+
+**Windows, or by hand on any OS:**
+
+```bash
+python3 --version                # confirm 3.12+ before creating the venv
+python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt   # runtime deps + pytest/ruff
 ```
 
 To install only what the application itself needs, use
 `pip install -r requirements.txt`.
+
+> **Interpreter older than 3.12?** Both entrypoints (`mock_uc.server` and
+> `backend.app.main`) check the Python version at startup and fail with a
+> clear message pointing back here, instead of a confusing `numpy>=2.0`
+> resolution error during `pip install` or a subtler bug later. On Ubuntu,
+> the `deadsnakes` PPA installs a newer interpreter side by side without
+> touching the system one:
+> ```bash
+> sudo add-apt-repository -y ppa:deadsnakes/ppa && sudo apt update
+> sudo apt install -y python3.12 python3.12-venv
+> rm -rf .venv && python3.12 -m venv .venv && source .venv/bin/activate
+> pip install -r requirements-dev.txt
+> ```
+> Ubuntu 24.04 and Fedora 42 both ship 3.12 by default, so this only comes up
+> on an older or customized install. If reinstalling Python isn't an option,
+> [Run with Docker](#run-with-docker-recommended) sidesteps the host's Python
+> version entirely.
 
 #### Run the application
 
@@ -155,6 +184,14 @@ Two more read-outs sit at the bottom of the plot panel:
 - **Power (RMS)** (both tabs) — the frame's RMS power in dBFS, so clipping
   (near 0 dB) is visible even while looking at the time-domain waveform.
 
+On the **FD** tab, a **Hold / Reset Hold** pair appears next to the tabs.
+Turning Hold on overlays a dashed amber trace that keeps, per frequency
+point, the highest magnitude seen since it was switched on — the same
+max-hold a spectrum analyzer offers, useful for catching a transient that's
+gone before the live (green) trace can show it. Reset Hold clears the
+overlay and starts it fresh; toggling Hold off just hides it without losing
+what it has captured, so switching it back on later resumes from there.
+
 Drop `--reload` when running outside development.
 
 #### Run the mock microcontroller
@@ -173,6 +210,19 @@ python -m mock_uc.server --fps 100 --port 8765
 Since each frame carries 20,000 samples, the rate shown on the gauge is
 `fps ÷ 50` Msps: `--fps 30` → 0.60 Msps, `--fps 100` → 2.00 Msps (the value
 specified for the real hardware).
+
+`Address already in use`? Something is already bound to that port — most
+often a previous `mock_uc.server` that's still running in another terminal
+(a `Ctrl+C` that didn't actually stop it, or the same command started twice).
+The server now reports this with an actionable message instead of a raw
+traceback:
+```
+[mock_uc] ERROR: port 8765 is already in use.
+Another mock_uc.server is probably still running. Try:
+  pkill -f "mock_uc.server"
+or start this one on a different port:
+  python -m mock_uc.server --port 8766
+```
 
 #### Run the tests
 
@@ -313,6 +363,8 @@ sample-rate gauge, connection popups and data export.
       located to within one FFT bin, shown next to the FD plot
 - [x] RMS power estimation *(optional)* — per-frame power in dBFS, live
       regardless of which tab is open, also exported in the CSV
+- [x] Max-hold / trace hold *(optional)* — per-point peak overlay on the FD
+      spectrum, toggle + reset, catches transients the live trace misses
 
 **DevOps / Delivery**
 - [x] CI: GitHub Actions running the full test suite with coverage on every push/PR
@@ -340,6 +392,7 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | *(optional)* Frequency-domain plot (FFT) | ✅ Done | `spectrum.py` (Hann + rfft, dBFS) → FD tab, computed on demand |
 | *(optional)* FFT peak detection | ✅ Done | `spectrum.py::compute_spectrum` (full-resolution argmax) → Peak read-out in FD |
 | *(optional)* Power estimation | ✅ Done | `power.py` (RMS, dBFS) → always-on read-out, also in CSV export |
+| *(optional)* Trace hold (max-hold) | ✅ Done | `frontend/app.js` (`updateHoldData`) → dashed overlay series in FD, Hold/Reset controls |
 
 ## Tech Stack
 
@@ -395,6 +448,7 @@ SensorMonitorTII/
 ├── docker-compose.yml            # app + mock uC, one command to run everything
 ├── .dockerignore                 # keeps tests/docs/caches out of the image
 ├── demo_pipeline.py               # manual dev script: real client + mock uC, no web server
+├── setup.sh                       # Linux/macOS: finds Python 3.12+, creates .venv, installs deps
 ├── pyproject.toml                # pytest / coverage / ruff configuration
 ├── requirements.txt               # runtime dependencies
 └── requirements-dev.txt           # + testing/lint dependencies
@@ -565,6 +619,27 @@ implementation decision:
     that matters most while looking at the waveform itself. It shares the
     dBFS reference with `spectrum.py` so the two numbers are directly
     comparable, and is included in the CSV export as a per-frame column.
+
+24. **Max-hold lives entirely in the frontend, not the backend.** Unlike the
+    spectrum or the peak, "the highest value seen since I turned this on" is
+    a property of one browser tab's session, not of the signal itself — the
+    backend would have no correct answer for what to send a second client (or
+    the same client after a refresh). `app.js` accumulates it client-side
+    from the `spectrum_db` already being received, as a second series
+    overlaid on the live one, so it costs nothing extra on the wire and stays
+    correct if a future revision supports more than one connected client.
+
+25. **Both entrypoints fail fast on Python < 3.12, instead of trusting
+    `pip install` to catch it.** `numpy>=2.0` not resolving is a correct but
+    confusing failure mode for someone on an older interpreter — nothing in
+    that message says "wrong Python version." `mock_uc/server.py` and
+    `backend/app/main.py` both check `sys.version_info` before any other
+    import and exit with a message that names the actual problem and points
+    at this README. `setup.sh` picks a working interpreter up front, so this
+    only fires for someone bypassing it — but bypassing it (a manual venv, a
+    different shell) is exactly when a silent version mismatch is most
+    likely, so the guard stays in the app itself rather than only in the
+    setup script.
 
 ## Continuous Integration
 

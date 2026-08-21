@@ -16,6 +16,7 @@ htmlcov/
 # Dev/test artifacts not needed at runtime
 backend/tests/
 demo_pipeline.py
+setup.sh
 
 # Accidental downloads (wheels/sdists in repo root)
 *.whl

@@ -11,14 +11,30 @@ connects.
 
 from __future__ import annotations
 
-import argparse
-import asyncio
-import contextlib
-import time
+import sys
 
-import websockets
+# Checked before any third-party import: on too old an interpreter, pip
+# either can't resolve numpy>=2.0 at all (aborting the whole install) or, if
+# an unpinned older one slipped in some other way, things may still "work"
+# but not as tested. Either way this is a clearer failure than a
+# ModuleNotFoundError or a version-specific bug turning up later.
+if sys.version_info < (3, 12):  # noqa: UP036 -- deliberately reachable on old interpreters
+    sys.exit(
+        "Sensor Monitor requires Python 3.12+, but this interpreter is "
+        f"{sys.version_info.major}.{sys.version_info.minor}.\n"
+        "See README.md > Getting Started for how to install 3.12, or run "
+        "with Docker instead: docker compose up --build"
+    )
 
-from .signal_generator import (
+import argparse  # noqa: E402
+import asyncio  # noqa: E402
+import contextlib  # noqa: E402
+import errno  # noqa: E402
+import time  # noqa: E402
+
+import websockets  # noqa: E402
+
+from .signal_generator import (  # noqa: E402
     EXPECTED_SAMPLES_PER_FRAME,
     SAMPLE_RATE_HZ,
     SignalGenerator,
@@ -103,12 +119,6 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    print(
-        f"[mock_uc] listening on ws://{args.host}:{args.port} "
-        f"({args.samples} samples/frame, {args.fps} fps target, "
-        f"{SAMPLE_RATE_HZ} sps nominal)"
-    )
-
     async def bound_handler(ws):
         await _handler(ws, args.fps, args.samples)
 
@@ -116,10 +126,29 @@ async def main() -> None:
     # which costs ~4 ms of CPU per 80 KB frame here. Sensor data is essentially
     # incompressible noise, so that CPU buys nothing and caps the achievable
     # frame rate. The real uC streams raw bytes too.
-    async with websockets.serve(
-        bound_handler, args.host, args.port, max_size=None, compression=None
-    ):
-        await asyncio.Future()  # run forever
+    try:
+        server_cm = websockets.serve(
+            bound_handler, args.host, args.port, max_size=None, compression=None
+        )
+        async with server_cm:
+            # Only printed once the socket is actually bound -- if the port
+            # is taken, the exception below fires before this ever prints.
+            print(
+                f"[mock_uc] listening on ws://{args.host}:{args.port} "
+                f"({args.samples} samples/frame, {args.fps} fps target, "
+                f"{SAMPLE_RATE_HZ} sps nominal)"
+            )
+            await asyncio.Future()  # run forever
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            sys.exit(
+                f"[mock_uc] ERROR: port {args.port} is already in use.\n"
+                "Another mock_uc.server is probably still running. Try:\n"
+                '  pkill -f "mock_uc.server"\n'
+                "or start this one on a different port:\n"
+                f"  python -m mock_uc.server --port {args.port + 1}"
+            )
+        raise
 
 
 if __name__ == "__main__":
