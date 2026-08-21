@@ -1,0 +1,81 @@
+name: Sensor Monitor CI
+
+on:
+  push:
+    branches:
+      - "**"
+
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  unit-tests:
+    name: Unit Tests (pytest)
+    runs-on: ubuntu-24.04
+
+    steps:
+
+      # ==========================================================
+      # CHECKOUT
+      # ==========================================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ==========================================================
+      # SETUP PYTHON
+      # ==========================================================
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-dev.txt
+
+
+      # ==========================================================
+      # INSTALL DEPENDENCIES
+      # ==========================================================
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+
+      # ==========================================================
+      # UNIT TESTS
+      # ==========================================================
+
+      - name: Run unit tests
+        run: |
+          python -m pytest --junitxml=test-results.xml
+
+
+      # ==========================================================
+      # PUBLISH TEST RESULTS (JUnit report na aba de Checks)
+      # ==========================================================
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Pytest Results
+          path: test-results.xml
+          reporter: java-junit
+
+
+      # ==========================================================
+      # UPLOAD TEST RESULTS
+      # ==========================================================
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.xml
+          if-no-files-found: warn
