@@ -54,6 +54,6 @@ fi
 echo
 echo "Setup complete. Next steps:"
 echo "  source .venv/bin/activate"
-echo "  python -m mock_uc.server --fps 60 --port 8765   # terminal 1"
-echo "  python -m uvicorn backend.app.main:app --reload --port 8000   # terminal 2"
-echo "  open http://localhost:8000"
+echo "  python -m mock_uc.server --fps 60 --port 48765   # terminal 1"
+echo "  python -m uvicorn backend.app.main:app --reload --port 48000   # terminal 2"
+echo "  open http://localhost:48000"

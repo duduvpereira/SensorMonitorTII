@@ -49,7 +49,7 @@ RUN useradd --create-home --uid 1000 appuser \
 USER appuser
 
 # The app serves the web UI and the frontend<->backend WebSocket here.
-EXPOSE 8000
+EXPOSE 48000
 
 # Bind to 0.0.0.0 so the server is reachable from outside the container.
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "48000"]

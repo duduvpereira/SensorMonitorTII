@@ -33,7 +33,7 @@ challenge.
 ## Getting Started
 
 There are two ways to run the application, and both end up serving the same UI
-at <http://localhost:8000>:
+at <http://localhost:48000>:
 
 | | What you need | Best for |
 |---|---|---|
@@ -71,18 +71,55 @@ docker compose up --build
 
 That builds one image and starts two containers from it:
 
+<details>
+<summary><strong>Two things to check before reporting this repo as broken</strong> — a permission error and a port conflict, both about the local Docker install, not the app.</summary>
+
+**`permission denied ... /var/run/docker.sock`** — the current user isn't in
+the `docker` group, so every Docker command needs `sudo`. Either prefix every
+command in this section with `sudo`, or fix it once:
+
+```bash
+sudo usermod -aG docker $USER && newgrp docker
+```
+
+(full context in [`docs/install-docker.md`](docs/install-docker.md#optional-run-docker-without-sudo)).
+
+**`failed to bind host port ... address already in use`** — the ports are
+deliberately unusual (48000/48765, not 8000/8765 — 8765 in particular is the
+`websockets` library's own quickstart example, so it collides more often
+than you'd expect), but a leftover container from a previous run of *this*
+project can still hold one of them. Compose's own error doesn't say which
+process holds it or how to work around it, so check first:
+
+```bash
+sudo lsof -i :48000 -i :48765          # Linux/macOS
+```
+
+If either is taken, override the host port without touching any file —
+the container-internal ports (and the `mock-uc:48765` address the two
+containers use to reach each other) stay the same either way:
+
+```bash
+MOCK_PORT=8766 docker compose up --build
+# then use ws://localhost:8766 from outside Docker, e.g. in demo_pipeline.py
+```
+
+</details>
+
+| Service | Container | Port | Role |
+
 | Service | Container | Port | Role |
 |---|---|---|---|
-| `app` | `sensor-monitor-app` | `8000` | FastAPI + Uvicorn, serves the GUI and the frontend WebSocket |
-| `mock-uc` | `sensor-monitor-mock` | `8765` | the mock microcontroller, streaming at `--fps 100` (2 Msps) |
+| `app` | `sensor-monitor-app` | `48000` | FastAPI + Uvicorn, serves the GUI and the frontend WebSocket |
+| `mock-uc` | `sensor-monitor-mock` | `48765` | the mock microcontroller, streaming at `--fps 100` (2 Msps) |
 
-Then open <http://localhost:8000>. The URL field arrives pre-filled with
-`ws://mock-uc:8765` — the mock's name on the Compose network — so you can press
+Then open <http://localhost:48000>. The URL field arrives pre-filled with
+`ws://mock-uc:48765` — the mock's name on the Compose network — so you can press
 **Connect** straight away.
 
 > The uC connection is opened by the **backend**, not by the browser, so the URL
-> is resolved inside the `app` container. `ws://localhost:8765` would point at
-> the app container itself and fail; use the service name. Port 8765 is still
+> is resolved inside the `app` container. `ws://localhost:48765` would point at
+> the app container itself and fail; use the service name. Port 48765 is still
 > published on the host so tools running outside Docker (such as
 > `demo_pipeline.py`) can reach the mock.
 
@@ -97,7 +134,7 @@ docker compose up --build --no-deps app   # app only, to use REAL hardware
 
 To drive **real hardware**, start the `app` service alone (last line above —
 `--no-deps` is what keeps Compose from pulling the mock in as well) and type the
-board's own URL, `ws://<board-ip>:8765`, into the GUI. The app has no runtime
+board's own URL, `ws://<board-ip>:48765`, into the GUI. The app has no runtime
 dependency on the mock.
 
 To change the mock's frame rate, edit the `--fps` value in the `mock-uc`
@@ -164,17 +201,17 @@ Three steps — the mock uC, the backend, and the browser:
 
 ```bash
 # 1. In one terminal: start the mock microcontroller
-python -m mock_uc.server --fps 60 --port 8765
+python -m mock_uc.server --fps 60 --port 48765
 
 # 2. In another terminal: start the backend (FastAPI + Uvicorn)
-python -m uvicorn backend.app.main:app --reload --port 8000
+python -m uvicorn backend.app.main:app --reload --port 48000
 
 # 3. In a web browser: open the GUI
-#    http://localhost:8000
+#    http://localhost:48000
 ```
 
-In the GUI, enter the uC's WebSocket URL — `ws://localhost:8765` for the mock
-(pre-filled), or `ws://<board-ip>:8765` for real hardware — and press
+In the GUI, enter the uC's WebSocket URL — `ws://localhost:48765` for the mock
+(pre-filled), or `ws://<board-ip>:48765` for real hardware — and press
 **Connect**. The plot, the per-frame log and the sample-rate gauge start
 updating immediately; **Disconnect** stops the stream and re-enables the input.
 
@@ -204,13 +241,13 @@ Drop `--reload` when running outside development.
 #### Run the mock microcontroller
 
 ```bash
-python -m mock_uc.server --fps 100 --port 8765
+python -m mock_uc.server --fps 100 --port 48765
 ```
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `--host` | `0.0.0.0` | bind address |
-| `--port` | `8765` | bind port |
+| `--port` | `48765` | bind port |
 | `--fps` | `30` | frames/second; `--fps 100` reproduces the real board's 2 Msps |
 | `--samples` | `20000` | samples per frame — set to something else (e.g. `19999`) to emit invalid frames on purpose and exercise the red log line |
 
@@ -224,7 +261,7 @@ often a previous `mock_uc.server` that's still running in another terminal
 The server now reports this with an actionable message instead of a raw
 traceback:
 ```
-[mock_uc] ERROR: port 8765 is already in use.
+[mock_uc] ERROR: port 48765 is already in use.
 Another mock_uc.server is probably still running. Try:
   pkill -f "mock_uc.server"
 or start this one on a different port:
@@ -265,8 +302,8 @@ log panel's toolbar and press **Export**. The same data is available directly
 over HTTP:
 
 ```bash
-curl -O -J "http://localhost:8000/export?fmt=csv&seconds=5"
-curl -O -J "http://localhost:8000/export?fmt=json&seconds=5"
+curl -O -J "http://localhost:48000/export?fmt=csv&seconds=5"
+curl -O -J "http://localhost:48000/export?fmt=json&seconds=5"
 ```
 
 ## Overview
@@ -586,8 +623,8 @@ implementation decision:
     matter of not starting the mock service.
 
 21. **The uC URL is served from `/config`, not baked into the HTML.** The
-    correct default differs per deployment — `ws://localhost:8765` for a local
-    run, `ws://mock-uc:8765` inside Compose, where the *backend* is the one
+    correct default differs per deployment — `ws://localhost:48765` for a local
+    run, `ws://mock-uc:48765` inside Compose, where the *backend* is the one
     resolving the name. The frontend fetches it on load and overwrites the
     field only if the user has not typed into it yet, so the same static
     assets and the same image serve both cases with no rebuild.

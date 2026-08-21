@@ -7,7 +7,7 @@ WebSocket *client* to the uC at the same time:
              <------  frontend<->backend  <------
 
 Flow:
-    1. Browser opens /ws and sends {"action": "connect", "url": "ws://uc:8765"}.
+    1. Browser opens /ws and sends {"action": "connect", "url": "ws://uc:48765"}.
     2. Backend opens stream_frames() against that URL (the client layer).
     3. For every ProcessedFrame, the backend sends the log/metadata to the
        browser; the heavy plot_samples are included only when the time-based
@@ -77,7 +77,7 @@ NOMINAL_FPS = 100
 # URL the frontend's input box is pre-filled with. Overridable via environment
 # so the same image works in both setups: under Docker Compose the mock uC is
 # reachable by its service name, while a local run uses localhost.
-DEFAULT_UC_URL = os.getenv("SENSOR_MONITOR_UC_URL", "ws://localhost:8765")
+DEFAULT_UC_URL = os.getenv("SENSOR_MONITOR_UC_URL", "ws://localhost:48765")
 
 
 app = FastAPI(title="Sensor Monitor")

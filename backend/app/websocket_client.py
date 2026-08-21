@@ -152,7 +152,7 @@ async def stream_frames(
     plot/log, events drive the popups and the Connect-button state.
 
     Args:
-        uri: WebSocket URL of the uC, e.g. "ws://192.168.0.10:8765".
+        uri: WebSocket URL of the uC, e.g. "ws://192.168.0.10:48765".
         plot_points: Target decimated point count per frame for the plot.
         expected_samples: Expected samples/frame (kept for future configurability).
         options: Live stream settings the caller may mutate mid-stream (which

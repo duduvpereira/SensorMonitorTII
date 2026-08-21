@@ -5,6 +5,15 @@
 #
 # To point the app at a REAL uC instead, just don't start the mock and type the
 # real uC's ws:// URL in the UI. The app container doesn't depend on the mock.
+#
+# Ports 48000/48765 (rather than the more obvious 8000/8765) are deliberately
+# unusual -- 8765 in particular is the websockets library's own quickstart
+# example, so anyone who followed a similar tutorial is likely to already have
+# something bound to it. Host ports are still overridable (APP_PORT /
+# MOCK_PORT) as a second line of defense, since Compose's own error for a
+# taken port ("failed to bind host port ... address already in use") doesn't
+# say which process owns it or how to fix it. See the troubleshooting note in
+# the README's Docker section before assuming this repo is broken.
 
 services:
   app:
@@ -12,12 +21,12 @@ services:
     image: sensor-monitor:latest
     container_name: sensor-monitor-app
     ports:
-      - "8000:8000" # http://localhost:8000
+      - "${APP_PORT:-48000}:48000" # http://localhost:${APP_PORT:-48000}
     environment:
       # It is the *backend* that opens the uC connection, not the browser, so
       # this resolves on the compose network. The UI's URL field is pre-filled
       # with it via /config.
-      SENSOR_MONITOR_UC_URL: "ws://mock-uc:8765"
+      SENSOR_MONITOR_UC_URL: "ws://mock-uc:48765"
     depends_on:
       - mock-uc
     restart: unless-stopped
@@ -30,9 +39,9 @@ services:
     command: >
       python -m mock_uc.server
       --host 0.0.0.0
-      --port 8765
+      --port 48765
       --fps 100
     ports:
-      - "8765:8765" # exposed so the browser-entered ws:// URL can also be
-                    # ws://localhost:8765 when testing from the host
+      - "${MOCK_PORT:-48765}:48765" # exposed so the browser-entered ws:// URL
+                                   # can also be ws://localhost:48765 from the host
     restart: unless-stopped

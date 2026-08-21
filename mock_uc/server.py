@@ -4,7 +4,7 @@ Fake uC so we can build/test the rest of the pipeline without the real
 hardware. It just opens a WebSocket and blasts int32_le frames at whoever
 connects.
 
-    python -m mock_uc.server            # ws://0.0.0.0:8765
+    python -m mock_uc.server            # ws://0.0.0.0:48765
     python -m mock_uc.server --fps 100  # real board runs ~100 fps / 8 MB/s,
                                          # we default lower so dev laptops keep up
 """
@@ -104,7 +104,7 @@ async def main() -> None:
     """
     parser = argparse.ArgumentParser(description="Mock uC WebSocket server.")
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=48765)
     parser.add_argument(
         "--fps",
         type=float,

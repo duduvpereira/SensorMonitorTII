@@ -3,7 +3,7 @@
 Screenshots of the running app, walking through both plot domains, max-hold,
 and every connection-lifecycle popup described in
 [Architecture](architecture.md#connection-lifecycle). All captured against
-`python -m mock_uc.server --fps 100 --port 8765`.
+`python -m mock_uc.server --fps 100 --port 48765`.
 
 ## Frequency domain (FD)
 
