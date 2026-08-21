@@ -448,3 +448,18 @@ els.popupOverlay.addEventListener("click", (ev) => {
 setStatus("Disconnected", "status-idle");
 setConnectedUI(false);
 resetGauge();
+
+// The uC URL depends on where the app runs (localhost vs. a compose service
+// name), so the backend is the one that knows it. Fetch it instead of baking
+// it into the markup.
+const urlFromMarkup = els.urlInput.value;
+fetch("/config")
+  .then((r) => r.json())
+  .then((cfg) => {
+    // Only replace the value that came from the HTML. If the user already
+    // started typing while this request was in flight, leave their input alone.
+    if (cfg.default_uc_url && els.urlInput.value === urlFromMarkup) {
+      els.urlInput.value = cfg.default_uc_url;
+    }
+  })
+  .catch(() => {});
