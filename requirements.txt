@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+websockets>=13.0
+numpy>=2.0
+xxhash>=3.4
