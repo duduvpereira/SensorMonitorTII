@@ -176,6 +176,9 @@ def test_set_domain_fd_adds_spectrum_to_frames():
             frame = spectra[0]
             assert len(frame["spectrum_db"]) > 0
             assert frame["spectrum_max_hz"] == 1_000_000.0
+            assert frame["peak_hz"] is not None
+            assert frame["peak_db"] is not None
+            assert frame["power_db"] is not None
             # The log line keeps flowing regardless of the selected domain.
             assert "log_line" in frame
 

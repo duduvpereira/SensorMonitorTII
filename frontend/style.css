@@ -1,5 +1,6 @@
 /* ---- Base ---- */
 * { box-sizing: border-box; }
+.hidden { display: none; }
 
 :root {
   --bg: #0f172a;
@@ -197,6 +198,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .gauge-unit { font-size: 12px; fill: var(--text-muted); }
+
+/* ---- RMS power read-out, bottom-right, styled to match the cursor read-out ---- */
+.power-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: monospace;
+  font-size: 12px;
+  justify-self: end;
+  grid-column: 3;
+}
 
 /* ---- Log panel ---- */
 .log-panel {

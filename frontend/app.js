@@ -14,6 +14,9 @@ const els = {
   cursorY: document.getElementById("cursor-y"),
   cursorXKey: document.getElementById("cursor-x-key"),
   cursorYKey: document.getElementById("cursor-y-key"),
+  peakRow: document.getElementById("peak-row"),
+  peakVal: document.getElementById("peak-val"),
+  powerVal: document.getElementById("power-val"),
   tabs: document.querySelectorAll(".tab"),
   popupOverlay: document.getElementById("popup-overlay"),
   popupTitle: document.getElementById("popup-title"),
@@ -246,6 +249,25 @@ function resetGauge() {
 }
 
 // ----------------------------------------------------------------------------
+// PEAK FREQUENCY (FD-only) AND RMS POWER READOUTS
+// ----------------------------------------------------------------------------
+
+function updatePeakReadout(peakHz, peakDb) {
+  const known = peakHz != null && peakDb != null;
+  els.peakVal.textContent = known ? `${fmtHz(peakHz)} @ ${peakDb.toFixed(1)} dBFS` : "—";
+}
+
+function updatePowerReadout(powerDb) {
+  els.powerVal.textContent = powerDb != null ? `${powerDb.toFixed(1)} dBFS` : "—";
+}
+
+function resetReadouts() {
+  // Both go back to placeholders whenever the stream isn't live.
+  updatePeakReadout(null, null);
+  updatePowerReadout(null);
+}
+
+// ----------------------------------------------------------------------------
 // DOMAIN (TD / FD) SWITCHING
 // ----------------------------------------------------------------------------
 
@@ -267,6 +289,11 @@ function setDomain(domain) {
   els.cursorYKey.textContent = domain === "fd" ? "Magnitude" : "Amplitude";
   els.cursorX.textContent = "—";
   els.cursorY.textContent = "—";
+
+  // A "peak frequency" is meaningless in TD, where there's no single
+  // dominant tone to point at -- so hide the row outside of FD.
+  els.peakRow.classList.toggle("hidden", domain !== "fd");
+  updatePeakReadout(null, null);
 
   // Drop the current chart: the next frame in the new domain rebuilds it with
   // the right axes. Showing the old curve under new axis labels would be
@@ -294,11 +321,13 @@ function handleFrame(msg) {
     if (msg.spectrum_db && msg.spectrum_db.length > 0) {
       updatePlot(msg.spectrum_db, msg.spectrum_max_hz);
     }
+    updatePeakReadout(msg.peak_hz, msg.peak_db);
   } else if (msg.plot_samples && msg.plot_samples.length > 0) {
     updatePlot(msg.plot_samples, null);
   }
 
   updateGauge(msg.sample_rate);
+  updatePowerReadout(msg.power_db);
 }
 
 function handleEvent(msg) {
@@ -319,6 +348,7 @@ function handleEvent(msg) {
       setConnectedUI(false);
       stopRenderLoop();
       resetGauge();
+      resetReadouts();
       closeSocket();
       if (msg.detail !== "by user") {
         setStatus("Error", "status-error");
@@ -393,6 +423,7 @@ function requestDisconnect() {
   setStatus("Disconnected", "status-idle");
   stopRenderLoop();
   resetGauge();
+  resetReadouts();
   closeSocket();
 }
 
@@ -448,6 +479,7 @@ els.popupOverlay.addEventListener("click", (ev) => {
 setStatus("Disconnected", "status-idle");
 setConnectedUI(false);
 resetGauge();
+resetReadouts();
 
 // The uC URL depends on where the app runs (localhost vs. a compose service
 // name), so the backend is the one that knows it. Fetch it instead of baking

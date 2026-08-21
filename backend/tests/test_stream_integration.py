@@ -127,12 +127,18 @@ async def test_domain_switch_takes_effect_mid_stream():
                 if len(fd_frames) >= 2:
                     break
 
-    # Before the switch: no FFT work was done at all.
+    # Before the switch: the FFT never ran, yet power still shows up on every
+    # frame -- it doesn't care which domain is selected.
     assert all(f.spectrum_db == [] for f in td_frames)
     assert all(f.spectrum_max_hz is None for f in td_frames)
+    assert all(f.peak_hz is None for f in td_frames)
+    assert all(f.power_db is not None for f in td_frames)
 
-    # After it: every frame carries a spectrum, and the time-domain data keeps
-    # coming too, so the log and the export are unaffected by the tab choice.
+    # After the switch: spectrum and peak show up too, and the time-domain
+    # data keeps flowing regardless -- neither the log nor the export cares
+    # which tab is selected.
     assert all(len(f.spectrum_db) > 0 for f in fd_frames)
     assert all(f.spectrum_max_hz == 1_000_000.0 for f in fd_frames)
+    assert all(f.peak_hz is not None for f in fd_frames)
     assert all(len(f.plot_samples) > 0 for f in fd_frames)
+    assert all(f.power_db is not None for f in fd_frames)

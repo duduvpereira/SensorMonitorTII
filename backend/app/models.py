@@ -36,6 +36,16 @@ class ProcessedFrame:
         spectrum_max_hz: Nyquist frequency the magnitudes span, so the
             frontend can rebuild the frequency axis without it being resent on
             every frame. None when no spectrum was computed.
+        peak_hz: Where the tallest bin of the spectrum sits, accurate to
+            within a single FFT bin. Left as None on any frame where no
+            spectrum was computed.
+        peak_db: How tall that bin is, in dBFS. Also None whenever peak_hz
+            is None -- the two always arrive together.
+        power_db: RMS power of the frame's raw samples, in dBFS. This one
+            isn't gated by domain -- it comes from a cheap extra pass over
+            samples the time-domain plot already reads, so it's filled in
+            every frame. Only None when the frame had no parseable samples
+            at all.
     """
 
     frame_number: int
@@ -48,6 +58,9 @@ class ProcessedFrame:
     plot_samples: list[float] = field(default_factory=list)
     spectrum_db: list[float] = field(default_factory=list)
     spectrum_max_hz: float | None = None
+    peak_hz: float | None = None
+    peak_db: float | None = None
+    power_db: float | None = None
 
     def to_log_line(self) -> str:
         """Formats the frame as the log line required by the challenge.
@@ -73,6 +86,9 @@ class ProcessedFrame:
             "plot_samples": self.plot_samples,
             "spectrum_db": self.spectrum_db,
             "spectrum_max_hz": self.spectrum_max_hz,
+            "peak_hz": self.peak_hz,
+            "peak_db": self.peak_db,
+            "power_db": self.power_db,
             "log_line": self.to_log_line(),
         }
 

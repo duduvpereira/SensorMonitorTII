@@ -27,6 +27,7 @@ from .frame_validator import validate_frame
 from .hashing import hash_frame
 from .models import ConnectionEvent, ProcessedFrame
 from .plot_decimator import decimate_minmax
+from .power import compute_power_dbfs
 from .sample_rate import SampleRateEstimator
 from .spectrum import compute_spectrum
 
@@ -97,12 +98,18 @@ def process_payload(
     plot_samples: list[float] = []
     spectrum_db: list[float] = []
     spectrum_max_hz: float | None = None
+    peak_hz: float | None = None
+    peak_db: float | None = None
+    power_db: float | None = None
     try:
         samples = parse_frame(payload)
         if samples.size:
             plot_samples = decimate_minmax(samples, target_points=plot_points)
+            # Unlike the FFT below, power is cheap enough to compute
+            # unconditionally -- there's no domain gate on it.
+            power_db = compute_power_dbfs(samples)
             if compute_fd:
-                spectrum_db, spectrum_max_hz = compute_spectrum(
+                spectrum_db, spectrum_max_hz, peak_hz, peak_db = compute_spectrum(
                     samples, target_points=spectrum_points
                 )
     except ValueError:
@@ -119,6 +126,9 @@ def process_payload(
         plot_samples=plot_samples,
         spectrum_db=spectrum_db,
         spectrum_max_hz=spectrum_max_hz,
+        peak_hz=peak_hz,
+        peak_db=peak_db,
+        power_db=power_db,
     )
 
 

@@ -38,11 +38,12 @@
         <p id="plot-placeholder" class="plot-placeholder">Connect to start streaming.</p>
       </div>
 
-      <!-- Bottom controls: cursor read-out (left) + sample rate gauge (center) -->
+      <!-- Bottom controls, left to right: cursor read-out, sample-rate gauge, RMS power -->
       <div class="plot-footer">
         <div class="cursor-readout" id="cursor-readout">
           <div class="cursor-row"><span class="cursor-key" id="cursor-x-key">Index</span><span class="cursor-val" id="cursor-x">—</span></div>
           <div class="cursor-row"><span class="cursor-key" id="cursor-y-key">Amplitude</span><span class="cursor-val" id="cursor-y">—</span></div>
+          <div class="cursor-row peak-row hidden" id="peak-row"><span class="cursor-key">Peak</span><span class="cursor-val" id="peak-val">—</span></div>
         </div>
 
         <div class="gauge-container">
@@ -59,6 +60,10 @@
             <text x="100" y="90" text-anchor="middle" class="gauge-value" id="gauge-value">—</text>
             <text x="100" y="110" text-anchor="middle" class="gauge-unit">Msps</text>
           </svg>
+        </div>
+
+        <div class="power-readout" id="power-readout">
+          <div class="cursor-row"><span class="cursor-key">Power (RMS)</span><span class="cursor-val" id="power-val">—</span></div>
         </div>
       </div>
     </section>

@@ -8,7 +8,14 @@ from backend.app.export import frames_to_csv, frames_to_json
 from backend.app.models import ProcessedFrame
 
 
-def _frame(n, plot_samples=None, sample_rate=None, is_valid=True, sample_count=20000):
+def _frame(
+    n,
+    plot_samples=None,
+    sample_rate=None,
+    is_valid=True,
+    sample_count=20000,
+    power_db=None,
+):
     return ProcessedFrame(
         frame_number=n,
         timestamp="2026-08-20 18:00:00",
@@ -18,6 +25,7 @@ def _frame(n, plot_samples=None, sample_rate=None, is_valid=True, sample_count=2
         frame_hash="a" * 32,
         sample_rate=sample_rate,
         plot_samples=plot_samples or [],
+        power_db=power_db,
     )
 
 
@@ -59,6 +67,7 @@ def test_csv_header():
         "is_valid",
         "frame_hash",
         "sample_rate",
+        "power_db",
         "sample_index",
         "sample_value",
     ]
@@ -98,3 +107,16 @@ def test_csv_invalid_frame_flag():
     # is_valid column is False, sample_count reflects the wrong count.
     assert reader[1][3] == "False"
     assert reader[1][2] == "19999"
+
+
+def test_csv_power_db_column():
+    frames = [_frame(1, plot_samples=[1.0], power_db=-42.5)]
+    reader = list(csv.reader(io.StringIO(frames_to_csv(frames))))
+    # power_db sits right after sample_rate in the header.
+    assert reader[1][6] == "-42.5"
+
+
+def test_csv_missing_power_db_is_blank():
+    frames = [_frame(1, plot_samples=[1.0], power_db=None)]
+    reader = list(csv.reader(io.StringIO(frames_to_csv(frames))))
+    assert reader[1][6] == ""

@@ -88,6 +88,9 @@ def test_to_dict_is_complete():
         "plot_samples",
         "spectrum_db",
         "spectrum_max_hz",
+        "peak_hz",
+        "peak_db",
+        "power_db",
         "log_line",
     ):
         assert key in d
@@ -98,6 +101,8 @@ def test_spectrum_is_skipped_by_default():
     pf = process_payload(_payload(20000), 1, SampleRateEstimator(), 2000, arrival_time=0.0)
     assert pf.spectrum_db == []
     assert pf.spectrum_max_hz is None
+    assert pf.peak_hz is None
+    assert pf.peak_db is None
 
 
 def test_spectrum_is_computed_when_requested():
@@ -112,6 +117,8 @@ def test_spectrum_is_computed_when_requested():
     )
     assert len(pf.spectrum_db) == 500
     assert pf.spectrum_max_hz == 1_000_000.0
+    assert pf.peak_hz is not None
+    assert pf.peak_db is not None
     # Time-domain data is still produced: the export reads it from the buffer
     # regardless of which tab is being shown.
     assert len(pf.plot_samples) > 0
@@ -128,3 +135,26 @@ def test_corrupt_payload_produces_no_spectrum():
     )
     assert pf.spectrum_db == []
     assert pf.spectrum_max_hz is None
+    assert pf.peak_hz is None
+    assert pf.peak_db is None
+    assert pf.power_db is None
+
+
+def test_power_is_computed_regardless_of_domain():
+    # No compute_fd flag here -- power isn't gated by domain like the FFT is.
+    pf = process_payload(_payload(20000), 1, SampleRateEstimator(), 2000, arrival_time=0.0)
+    assert pf.power_db is not None
+
+
+def test_silent_frame_reads_the_db_floor():
+    pf = process_payload(_payload(20000), 1, SampleRateEstimator(), 2000, arrival_time=0.0)
+    assert pf.power_db == -200.0
+
+
+def test_louder_frame_has_higher_power():
+    quiet_payload = np.full(20000, 100, dtype="<i4").tobytes()
+    loud_payload = np.full(20000, 1_000_000, dtype="<i4").tobytes()
+    est = SampleRateEstimator()
+    quiet_pf = process_payload(quiet_payload, 1, est, 2000, arrival_time=0.0)
+    loud_pf = process_payload(loud_payload, 2, est, 2000, arrival_time=0.01)
+    assert loud_pf.power_db > quiet_pf.power_db

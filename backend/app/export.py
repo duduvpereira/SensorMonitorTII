@@ -46,8 +46,8 @@ def frames_to_csv(frames: list[ProcessedFrame]) -> str:
     value. This keeps the file openable in any spreadsheet while still
     carrying both the metadata and the decimated signal.
 
-    Columns: frame_number, timestamp, sample_count, is_valid, frame_hash,
-             sample_rate, sample_index, sample_value
+    Columns, in order: frame_number, timestamp, sample_count, is_valid,
+    frame_hash, sample_rate, power_db, sample_index, sample_value.
     """
     out = io.StringIO()
     writer = csv.writer(out)
@@ -59,6 +59,7 @@ def frames_to_csv(frames: list[ProcessedFrame]) -> str:
             "is_valid",
             "frame_hash",
             "sample_rate",
+            "power_db",
             "sample_index",
             "sample_value",
         ]
@@ -71,7 +72,8 @@ def frames_to_csv(frames: list[ProcessedFrame]) -> str:
             f.sample_count,
             f.is_valid,
             f.frame_hash,
-            "" if f.sample_rate is None else f.sample_rate,
+            f.sample_rate if f.sample_rate is not None else "",
+            f.power_db if f.power_db is not None else "",
         ]
         if f.plot_samples:
             for i, value in enumerate(f.plot_samples):

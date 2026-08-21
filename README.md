@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
-![Tests](https://img.shields.io/badge/tests-89%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-102%20passing-brightgreen)
 ![Lint](https://img.shields.io/badge/lint-ruff-D7FF64)
 
 A web-based application that connects to a microcontroller (uC) over WebSocket,
@@ -148,6 +148,13 @@ frame without touching the uC connection, and the frame log keeps scrolling in
 both views. With the mock uC, the FD view shows its two synthetic tones at
 5 kHz and 50 kHz.
 
+Two more read-outs sit at the bottom of the plot panel:
+
+- **Peak** (FD only) — the dominant frequency and its magnitude, e.g.
+  `50.0 kHz @ -66.6 dBFS`, updated every frame.
+- **Power (RMS)** (both tabs) — the frame's RMS power in dBFS, so clipping
+  (near 0 dB) is visible even while looking at the time-domain waveform.
+
 Drop `--reload` when running outside development.
 
 #### Run the mock microcontroller
@@ -173,7 +180,7 @@ The suite runs against the local environment, not the container — the test and
 lint tooling is deliberately kept out of the image:
 
 ```bash
-python -m pytest        # runs the full suite (89 tests)
+python -m pytest        # runs the full suite (102 tests)
 python -m ruff check .  # lint
 ```
 
@@ -302,10 +309,14 @@ sample-rate gauge, connection popups and data export.
 - [x] Export controls (format + window in seconds)
 - [x] Frequency-domain (FFT) tab *(optional)* — TD/FD switch, dBFS spectrum
       with a Hz axis, switchable mid-stream
+- [x] FFT peak detection *(optional)* — dominant frequency + magnitude,
+      located to within one FFT bin, shown next to the FD plot
+- [x] RMS power estimation *(optional)* — per-frame power in dBFS, live
+      regardless of which tab is open, also exported in the CSV
 
 **DevOps / Delivery**
 - [x] CI: GitHub Actions running the full test suite with coverage on every push/PR
-- [x] 89 unit + integration tests
+- [x] 102 unit + integration tests
 - [x] Dockerfile (multi-stage, non-root) + docker-compose (backend + mock uC)
 - [ ] Verified install/run on Ubuntu 24.04 / Fedora 42
 
@@ -327,6 +338,8 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml`; see [Run with Docker](#run-with-docker-recommended) |
 | *(optional)* Data export | ✅ Done | `export.py` + `GET /export` + GUI controls |
 | *(optional)* Frequency-domain plot (FFT) | ✅ Done | `spectrum.py` (Hann + rfft, dBFS) → FD tab, computed on demand |
+| *(optional)* FFT peak detection | ✅ Done | `spectrum.py::compute_spectrum` (full-resolution argmax) → Peak read-out in FD |
+| *(optional)* Power estimation | ✅ Done | `power.py` (RMS, dBFS) → always-on read-out, also in CSV export |
 
 ## Tech Stack
 
@@ -355,7 +368,8 @@ SensorMonitorTII/
 │   │   ├── hashing.py           # XXH3_128 of the raw payload
 │   │   ├── sample_rate.py       # EMA-smoothed sample-rate estimator
 │   │   ├── plot_decimator.py    # min/max decimation for the plot
-│   │   ├── spectrum.py          # FFT / frequency-domain magnitudes in dBFS
+│   │   ├── spectrum.py          # FFT / frequency-domain magnitudes in dBFS + peak
+│   │   ├── power.py             # per-frame RMS power in dBFS
 │   │   ├── models.py            # ProcessedFrame, ConnectionEvent
 │   │   ├── buffer.py            # FrameRingBuffer, bounded frame history
 │   │   ├── plot_throttle.py     # caps plot updates at ~30/s
@@ -535,6 +549,22 @@ implementation decision:
     resolving the name. The frontend fetches it on load and overwrites the
     field only if the user has not typed into it yet, so the same static
     assets and the same image serve both cases with no rebuild.
+
+22. **The FFT peak is located before decimation, not after.** The spectrum
+    sent to the browser is reduced to ~1000 points for the plot, but locating
+    the peak on that reduced array would only place it to within one
+    decimated bucket (hundreds of Hz wide). `compute_spectrum` instead runs
+    `argmax` on the full 10001-bin spectrum before the reduction, so the
+    reported frequency is accurate to a single FFT bin (~100 Hz), and returns
+    both values from one FFT rather than computing the transform twice.
+
+23. **Power estimation runs every frame, independent of the TD/FD tab.**
+    Unlike the spectrum, RMS power is a single pass over samples already
+    parsed for the time-domain plot — not a second FFT — so gating it behind
+    `compute_fd` would save nothing while hiding a reading (e.g. clipping)
+    that matters most while looking at the waveform itself. It shares the
+    dBFS reference with `spectrum.py` so the two numbers are directly
+    comparable, and is included in the CSV export as a per-frame column.
 
 ## Continuous Integration
 

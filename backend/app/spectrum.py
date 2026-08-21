@@ -23,6 +23,8 @@ signal. Three decisions shape this module:
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 
 # Sensor acquisition rate from the challenge spec. See note 2 above.
@@ -35,12 +37,34 @@ _FULL_SCALE = float(2**31)
 _DB_FLOOR = -200.0
 
 
+class SpectrumResult(NamedTuple):
+    """What compute_spectrum() hands back. Behaves like a plain 4-tuple for
+    callers that just want to unpack it, but the named fields save a trip
+    back to this docstring to remember which slot is which.
+
+    Attributes:
+        magnitudes_db: Decimated magnitudes in dBFS, evenly spaced from DC to
+            nyquist_hz.
+        nyquist_hz: Upper edge of the frequency axis the magnitudes span.
+        peak_hz: Frequency of the tallest bin, read off the full-resolution
+            spectrum rather than the decimated one -- that pins it to a
+            single FFT bin instead of a whole decimated bucket. 0.0 when
+            there was nothing to search.
+        peak_db: Magnitude at peak_hz, in dBFS.
+    """
+
+    magnitudes_db: list[float]
+    nyquist_hz: float
+    peak_hz: float
+    peak_db: float
+
+
 def compute_spectrum(
     samples: np.ndarray,
     sample_rate_hz: float = NOMINAL_SAMPLE_RATE_HZ,
     target_points: int = 1000,
-) -> tuple[list[float], float]:
-    """Computes a single-sided amplitude spectrum in dBFS.
+) -> SpectrumResult:
+    """Computes a single-sided amplitude spectrum in dBFS, plus its peak.
 
     A Hann window is applied before the transform. Without it, a tone whose
     period does not divide the frame length evenly leaks energy across the
@@ -51,6 +75,9 @@ def compute_spectrum(
     The 10001 bins produced from a 20000-sample frame are reduced by keeping
     the **maximum** of each bucket, not the mean. Averaging would flatten
     narrow peaks -- which are exactly the features a spectrum exists to show.
+    The peak itself is located *before* that reduction happens, though:
+    decimation would only place it to within one bucket, while an argmax over
+    the full-resolution array pins it to a single FFT bin.
 
     Args:
         samples: 1-D array of raw sample values (not decimated).
@@ -58,17 +85,16 @@ def compute_spectrum(
         target_points: Approximate number of output points. Must be positive.
 
     Returns:
-        A tuple of (magnitudes_db, nyquist_hz). The magnitudes are evenly
-        spaced from DC to nyquist_hz, so the frontend can rebuild the
-        frequency axis linearly instead of receiving it on every frame.
-        Returns ([], 0.0) for an empty or single-sample input.
+        A SpectrumResult with empty/zeroed fields (magnitudes_db=[],
+        nyquist_hz=0.0, peak_hz=0.0, peak_db=_DB_FLOOR) when there are fewer
+        than two samples to work with.
     """
     if target_points <= 0:
         raise ValueError("target_points must be positive.")
 
     n = len(samples)
     if n < 2:
-        return [], 0.0
+        return SpectrumResult([], 0.0, 0.0, _DB_FLOOR)
 
     window = np.hanning(n)
     windowed = samples.astype(np.float64) * window
@@ -82,7 +108,17 @@ def compute_spectrum(
     db = np.maximum(db, _DB_FLOOR)
 
     nyquist_hz = sample_rate_hz / 2.0
-    return _decimate_peaks(db, target_points), nyquist_hz
+
+    bin_width_hz = nyquist_hz / (len(db) - 1) if len(db) > 1 else 0.0
+    peak_bin = int(db.argmax())
+
+    reduced = _decimate_peaks(db, target_points)
+    return SpectrumResult(
+        magnitudes_db=reduced,
+        nyquist_hz=nyquist_hz,
+        peak_hz=peak_bin * bin_width_hz,
+        peak_db=float(db[peak_bin]),
+    )
 
 
 def _decimate_peaks(db: np.ndarray, target_points: int) -> list[float]:
