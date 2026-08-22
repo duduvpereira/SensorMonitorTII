@@ -345,11 +345,14 @@ single self-contained executable (built with [PyInstaller](https://pyinstaller.o
 that bundles the interpreter, every dependency and the frontend into one
 file. No install step of any kind.
 
-**Get the binary** — either download it from a run of the
+**Get the binary** — download it from a run of the
 [**Build standalone binary**](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/build-binary.yml)
-GitHub Actions workflow (open it, *Run workflow*, wait ~2 minutes, download
-the `sensor-monitor-linux-x86_64` artifact from the run's summary page), or
-build it yourself on Linux:
+GitHub Actions workflow: open it, *Run workflow*, wait ~2 minutes, then grab
+the `sensor-monitor-linux-x86_64` artifact from the run's summary page:
+
+![Downloading the built artifact from a workflow run](docs/images/build-binary-artifact.png)
+
+Or build it yourself on Linux instead:
 
 ```bash
 ./packaging/build.sh      # needs only python3 + pip; output: dist/sensor-monitor
