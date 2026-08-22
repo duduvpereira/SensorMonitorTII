@@ -1,6 +1,6 @@
 # Sensor Monitor
 
-![CI](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml/badge.svg)](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Tests](https://img.shields.io/badge/tests-102%20passing-brightgreen)
 ![Lint](https://img.shields.io/badge/lint-ruff-D7FF64)
@@ -17,9 +17,9 @@ challenge.
 ## Table of Contents
 
 - [Getting Started](#getting-started)
-  - [Run with Docker (recommended)](#run-with-docker-recommended)
-  - [Run locally with Python](#run-locally-with-python)
   - [Run the standalone binary](#run-the-standalone-binary)
+  - [Run with Docker](#run-with-docker)
+  - [Run locally with Python](#run-locally-with-python)
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Project Status](#project-status)
@@ -38,11 +38,82 @@ the same UI at <http://localhost:48000>:
 
 | | What you need | Best for |
 |---|---|---|
-| [**Docker**](#run-with-docker-recommended) | Docker Engine only | running or evaluating the app |
+| [**Standalone binary**](#run-the-standalone-binary) | Nothing | the quickest way to just try it — download one file and run it |
+| [**Docker**](#run-with-docker) | Docker Engine only | running or evaluating the app in an isolated, reproducible environment |
 | [**Local Python**](#run-locally-with-python) | Python 3.12+ | developing, running the tests |
-| [**Standalone binary**](#run-the-standalone-binary) | Nothing | Docker unavailable and Python unavailable/unwanted |
 
-### Run with Docker (recommended)
+### Run the standalone binary
+
+The fastest way to try the app: `sensor-monitor` is a single self-contained
+executable (built with [PyInstaller](https://pyinstaller.org/)) that bundles
+the interpreter, every dependency and the frontend into one file. No install
+step of any kind — works even without Docker or a usable Python on the
+machine.
+
+**Get the binary** — a plain, public download, no GitHub account needed:
+
+```bash
+curl -LO https://github.com/duduvpereira/SensorMonitorTII/releases/download/standalone-latest/sensor-monitor
+```
+
+Or from a browser: [**Releases → standalone-latest**](https://github.com/duduvpereira/SensorMonitorTII/releases/tag/standalone-latest) →
+download the `sensor-monitor` asset.
+
+This is a rolling release: the `standalone-latest` tag always points at the
+most recent successful build, republished by CI on every run of the
+[**Build standalone binary**](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/build-binary.yml)
+workflow — nothing to trigger by hand.
+
+<details>
+<summary>Alternative: get it from the workflow run directly instead of the release</summary>
+
+Useful for a specific commit's build rather than the latest one. Note this
+route needs a signed-in GitHub account to download from — even on a public
+repo, that's a GitHub Actions artifact restriction, not something this repo
+controls. The release download above has no such requirement.
+
+1. Open the [**Build standalone binary**](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/build-binary.yml)
+   workflow and click **①** the run you want:
+
+   ![Opening the workflow run](docs/images/build-binary-workflow-runs.png)
+
+2. On the run's summary page, scroll to **Artifacts** and click **②** to
+   download `sensor-monitor-linux-x86_64`:
+
+   ![Downloading the built artifact from the run](docs/images/build-binary-artifact.png)
+
+It's a zip; unzip it to get the `sensor-monitor` executable.
+
+</details>
+
+Or build it yourself on Linux instead:
+
+```bash
+./packaging/build.sh      # needs only python3 + pip; output: dist/sensor-monitor
+```
+
+**Run it:**
+
+```bash
+chmod +x sensor-monitor   # if it doesn't already have the execute bit
+./sensor-monitor
+```
+
+It starts the mock uC and the backend together in a single process (unlike
+[`./run.sh`](#run-the-application), which supervises two), checks both
+ports before touching either, and opens a browser. `./sensor-monitor --help`
+lists the flags (`--port`, `--uc-port`, `--fps`, `--no-mock` for real
+hardware, `--no-browser`, ...).
+
+Built for **Linux x86_64**, compiled by CI on `ubuntu-24.04` — the same OS
+version the challenge names as the evaluation target, so the build's glibc
+is guaranteed compatible with it. `packaging/build.sh` has no Linux-specific
+step, so building on macOS should work too, but only the Linux build is
+what CI actually verifies end to end (it starts the binary and drives a
+real frame through `/ws`, not just checks that PyInstaller exits 0 — see
+[`.github/workflows/build-binary.yml`](.github/workflows/build-binary.yml)).
+
+### Run with Docker
 
 #### Prerequisites
 
@@ -107,8 +178,6 @@ MOCK_PORT=8766 docker compose up --build
 ```
 
 </details>
-
-| Service | Container | Port | Role |
 
 | Service | Container | Port | Role |
 |---|---|---|---|
@@ -194,7 +263,7 @@ To install only what the application itself needs, use
 > ```
 > Ubuntu 24.04 and Fedora 42 both ship 3.12 by default, so this only comes up
 > on an older or customized install. If reinstalling Python isn't an option,
-> [Run with Docker](#run-with-docker-recommended) sidesteps the host's Python
+> [Run with Docker](#run-with-docker) sidesteps the host's Python
 > version entirely.
 
 #### Run the application
@@ -338,47 +407,6 @@ curl -O -J "http://localhost:48000/export?fmt=csv&seconds=5"
 curl -O -J "http://localhost:48000/export?fmt=json&seconds=5"
 ```
 
-### Run the standalone binary
-
-For a machine with neither Docker nor a usable Python: `sensor-monitor` is a
-single self-contained executable (built with [PyInstaller](https://pyinstaller.org/))
-that bundles the interpreter, every dependency and the frontend into one
-file. No install step of any kind.
-
-**Get the binary** — download it from a run of the
-[**Build standalone binary**](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/build-binary.yml)
-GitHub Actions workflow: open it, *Run workflow*, wait ~2 minutes, then grab
-the `sensor-monitor-linux-x86_64` artifact from the run's summary page:
-
-![Downloading the built artifact from a workflow run](docs/images/build-binary-artifact.png)
-
-Or build it yourself on Linux instead:
-
-```bash
-./packaging/build.sh      # needs only python3 + pip; output: dist/sensor-monitor
-```
-
-**Run it:**
-
-```bash
-chmod +x sensor-monitor   # if it doesn't already have the execute bit
-./sensor-monitor
-```
-
-It starts the mock uC and the backend together in a single process (unlike
-[`./run.sh`](#run-the-application), which supervises two), checks both
-ports before touching either, and opens a browser. `./sensor-monitor --help`
-lists the flags (`--port`, `--uc-port`, `--fps`, `--no-mock` for real
-hardware, `--no-browser`, ...).
-
-Built for **Linux x86_64**, compiled by CI on `ubuntu-24.04` — the same OS
-version the challenge names as the evaluation target, so the build's glibc
-is guaranteed compatible with it. `packaging/build.sh` has no Linux-specific
-step, so building on macOS should work too, but only the Linux build is
-what CI actually verifies end to end (it starts the binary and drives a
-real frame through `/ws`, not just checks that PyInstaller exits 0 — see
-[`.github/workflows/build-binary.yml`](.github/workflows/build-binary.yml)).
-
 ## Overview
 
 A microcontroller on a LAN runs a WebSocket server. As soon as a client
@@ -489,7 +517,7 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | Validate sample count; red log line on mismatch | ✅ Done | `frame_validator.py` → `.log-line-error` |
 | XXH3_128 hash of raw payload per frame | ✅ Done | `hashing.py` |
 | Git commit history | ✅ Done | incremental commits, see `git log` |
-| Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml` ([Run with Docker](#run-with-docker-recommended)); CI (`ci.yml`, `build-binary.yml`) runs and is green on `ubuntu-24.04` directly, not just in a container — see [Project Status](#project-status) for exactly what that does and doesn't cover |
+| Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml` ([Run with Docker](#run-with-docker)); CI (`ci.yml`, `build-binary.yml`) runs and is green on `ubuntu-24.04` directly, not just in a container — see [Project Status](#project-status) for exactly what that does and doesn't cover |
 | *(optional)* Data export | ✅ Done | `export.py` + `GET /export` + GUI controls |
 | *(optional)* Frequency-domain plot (FFT) | ✅ Done | `spectrum.py` (Hann + rfft, dBFS) → FD tab, computed on demand |
 | *(optional)* FFT peak detection | ✅ Done | `spectrum.py::compute_spectrum` (full-resolution argmax) → Peak read-out in FD |
@@ -798,11 +826,25 @@ implementation decision:
     and drives a real frame through `/ws`, not just checks that PyInstaller
     exited 0.
 
+30. **The binary is published as a GitHub Release asset, not just a workflow
+    artifact.** `actions/upload-artifact` output can only be downloaded by
+    someone signed in to GitHub — true even on a public repository, and not
+    something a repo setting can turn off. That is a real obstacle for
+    "anyone can just download and run this," which is the entire pitch of
+    shipping a binary in the first place. `build-binary.yml` republishes the
+    same file to one rolling release (tag `standalone-latest`) on every
+    successful run, giving a single stable, anonymous, plain-HTTPS download
+    link that works with no GitHub account at all. The workflow-artifact
+    route is kept too, for the narrower case of wanting a specific commit's
+    build rather than the newest one.
+
 ## Continuous Integration
 
 Every push and pull request runs the **Sensor Monitor CI** workflow
 (`.github/workflows/ci.yml`) on `ubuntu-24.04`, as two independent jobs that
-run in parallel.
+run in parallel. See it run, or check the latest result, at
+[**github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml**](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/ci.yml)
+(same link as the CI badge at the top of this file).
 
 ### `lint` — ruff
 

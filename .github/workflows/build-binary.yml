@@ -14,6 +14,10 @@ jobs:
   build:
     name: PyInstaller build (Linux, ubuntu-24.04)
     runs-on: ubuntu-24.04
+    # Publishing a release asset needs write access to repo contents; the
+    # default GITHUB_TOKEN is otherwise read-only for a workflow_dispatch run.
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -67,9 +71,38 @@ jobs:
 
           kill "$BIN_PID"
 
-      - name: Upload binary
+      - name: Upload binary as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: sensor-monitor-linux-x86_64
           path: dist/sensor-monitor
           if-no-files-found: error
+
+      # Actions artifacts (the step above) require a signed-in GitHub account
+      # to download, even on a public repo -- that's a platform limitation,
+      # not something a repo setting can change. A Release asset has no such
+      # restriction: anyone gets a plain, anonymous HTTPS download. This
+      # updates one rolling release (tag "standalone-latest") in place on
+      # every successful build, so there's always a single stable link
+      # pointing at the most recent working binary, regardless of whether
+      # this run came from a manual trigger or a version tag.
+      - name: Publish as a public release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: standalone-latest
+          name: "Standalone binary (latest build)"
+          body: |
+            Automatically published by the **Build standalone binary**
+            workflow from commit `${{ github.sha }}`. This tag always points
+            at the most recent successful build, not a specific version.
+
+            Download `sensor-monitor`, then:
+            ```bash
+            chmod +x sensor-monitor
+            ./sensor-monitor
+            ```
+            No Python or Docker install needed. See the README's
+            "Run the standalone binary" section for flags and details.
+          files: dist/sensor-monitor
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
