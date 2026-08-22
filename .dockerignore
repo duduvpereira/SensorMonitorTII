@@ -19,6 +19,10 @@ demo_pipeline.py
 setup.sh
 run.sh
 .sensor-monitor-run/
+packaging/
+dist/
+build/
+*.spec
 
 # Accidental downloads (wheels/sdists in repo root)
 *.whl

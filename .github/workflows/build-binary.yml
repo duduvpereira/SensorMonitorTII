@@ -1,0 +1,75 @@
+name: Build standalone binary
+
+# Not part of the main CI gate (lint/tests run on every push) -- a
+# PyInstaller build takes a few minutes and isn't needed to validate a normal
+# code change. Trigger it by hand from the Actions tab, or by pushing a
+# "v*" tag.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: PyInstaller build (Linux, ubuntu-24.04)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the binary
+        run: |
+          chmod +x packaging/build.sh
+          ./packaging/build.sh
+
+      - name: Report binary size
+        run: du -h dist/sensor-monitor
+
+      # Drives the real pipeline through the frozen binary exactly like a
+      # human would: start it, wait for /config, open a WebSocket client
+      # against /ws and assert a real frame comes back with the right shape.
+      # This is what catches "PyInstaller build succeeded, binary is
+      # ModuleNotFoundError on first run" -- a working build and a working
+      # program are two different claims, and only running it proves both.
+      - name: Smoke test -- start the binary and verify the pipeline
+        run: |
+          ./dist/sensor-monitor --no-browser --port 48000 --uc-port 48765 &
+          BIN_PID=$!
+
+          echo "waiting for /config..."
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:48000/config > /dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "binary never came up; is it still alive?"
+            kill -0 "$BIN_PID" 2>/dev/null && echo "process is alive, just not answering" || echo "process exited"
+            exit 1
+          fi
+
+          echo "== /config =="
+          curl -sf http://127.0.0.1:48000/config
+          echo
+
+          python3 -m pip install --quiet websockets
+          python3 packaging/smoke_test.py 48000 48765
+
+          kill "$BIN_PID"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sensor-monitor-linux-x86_64
+          path: dist/sensor-monitor
+          if-no-files-found: error

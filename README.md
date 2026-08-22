@@ -19,6 +19,7 @@ challenge.
 - [Getting Started](#getting-started)
   - [Run with Docker (recommended)](#run-with-docker-recommended)
   - [Run locally with Python](#run-locally-with-python)
+  - [Run the standalone binary](#run-the-standalone-binary)
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Project Status](#project-status)
@@ -32,13 +33,14 @@ challenge.
 
 ## Getting Started
 
-There are two ways to run the application, and both end up serving the same UI
-at <http://localhost:48000>:
+There are three ways to run the application, and all of them end up serving
+the same UI at <http://localhost:48000>:
 
 | | What you need | Best for |
 |---|---|---|
 | [**Docker**](#run-with-docker-recommended) | Docker Engine only | running or evaluating the app |
 | [**Local Python**](#run-locally-with-python) | Python 3.12+ | developing, running the tests |
+| [**Standalone binary**](#run-the-standalone-binary) | Nothing | Docker unavailable and Python unavailable/unwanted |
 
 ### Run with Docker (recommended)
 
@@ -336,6 +338,44 @@ curl -O -J "http://localhost:48000/export?fmt=csv&seconds=5"
 curl -O -J "http://localhost:48000/export?fmt=json&seconds=5"
 ```
 
+### Run the standalone binary
+
+For a machine with neither Docker nor a usable Python: `sensor-monitor` is a
+single self-contained executable (built with [PyInstaller](https://pyinstaller.org/))
+that bundles the interpreter, every dependency and the frontend into one
+file. No install step of any kind.
+
+**Get the binary** — either download it from a run of the
+[**Build standalone binary**](https://github.com/duduvpereira/SensorMonitorTII/actions/workflows/build-binary.yml)
+GitHub Actions workflow (open it, *Run workflow*, wait ~2 minutes, download
+the `sensor-monitor-linux-x86_64` artifact from the run's summary page), or
+build it yourself on Linux:
+
+```bash
+./packaging/build.sh      # needs only python3 + pip; output: dist/sensor-monitor
+```
+
+**Run it:**
+
+```bash
+chmod +x sensor-monitor   # if it doesn't already have the execute bit
+./sensor-monitor
+```
+
+It starts the mock uC and the backend together in a single process (unlike
+[`./run.sh`](#run-the-application), which supervises two), checks both
+ports before touching either, and opens a browser. `./sensor-monitor --help`
+lists the flags (`--port`, `--uc-port`, `--fps`, `--no-mock` for real
+hardware, `--no-browser`, ...).
+
+Built for **Linux x86_64**, compiled by CI on `ubuntu-24.04` — the same OS
+version the challenge names as the evaluation target, so the build's glibc
+is guaranteed compatible with it. `packaging/build.sh` has no Linux-specific
+step, so building on macOS should work too, but only the Linux build is
+what CI actually verifies end to end (it starts the binary and drives a
+real frame through `/ws`, not just checks that PyInstaller exits 0 — see
+[`.github/workflows/build-binary.yml`](.github/workflows/build-binary.yml)).
+
 ## Overview
 
 A microcontroller on a LAN runs a WebSocket server. As soon as a client
@@ -422,6 +462,8 @@ sample-rate gauge, connection popups and data export.
 - [x] CI: GitHub Actions running the full test suite with coverage on every push/PR
 - [x] 102 unit + integration tests
 - [x] Dockerfile (multi-stage, non-root) + docker-compose (backend + mock uC)
+- [x] Standalone binary (PyInstaller) for machines with neither Docker nor
+      Python, built and smoke-tested by a separate CI workflow
 - [ ] Verified install/run on Ubuntu 24.04 / Fedora 42
 
 ## Requirements Traceability
@@ -493,12 +535,17 @@ SensorMonitorTII/
 │   └── signal_generator.py       # synthetic signal (sine tones + noise)
 ├── .github/
 │   ├── workflows/ci.yml          # test + coverage CI pipeline
+│   ├── workflows/build-binary.yml # builds + smoke-tests the standalone binary
 │   └── scripts/build_job_summary.py  # renders the CI job summary
 ├── docs/
 │   ├── install-docker.md         # Docker Engine install steps (Ubuntu / Fedora)
 │   ├── architecture.md           # system flowchart + connection-lifecycle sequence diagram
 │   ├── gui-tour.md               # screenshot walkthrough of the running GUI
 │   └── images/                   # screenshots referenced by gui-tour.md
+├── packaging/
+│   ├── launcher.py               # entry point PyInstaller freezes into `sensor-monitor`
+│   ├── build.sh                  # runs PyInstaller with the right flags
+│   └── smoke_test.py             # drives a real frame through a running instance
 ├── Dockerfile                    # multi-stage build, non-root runtime image
 ├── docker-compose.yml            # app + mock uC, one command to run everything
 ├── .dockerignore                 # keeps tests/docs/caches out of the image
@@ -713,6 +760,35 @@ implementation decision:
     to bump if the floor ever changes, and the two scripts can't quietly
     drift out of sync with each other or with the version guard described
     in #25.
+
+28. **The standalone binary is a separate entry point (`packaging/launcher.py`),
+    not a repurposed `run.sh`.** It runs the mock uC and the backend on one
+    asyncio event loop in a single process instead of two, since a frozen
+    binary has no separate Python environment to spawn a second copy of
+    itself into the way `run.sh` spawns `python -m mock_uc.server` as a
+    child. `backend/app/main.py` itself changed by exactly one line
+    (`FRONTEND_DIR` reads an env var override before falling back to its
+    original `__file__`-relative path) so that a frozen build can tell it
+    where PyInstaller actually put the bundled frontend assets, without
+    making the core app module aware of packaging at all.
+
+29. **`packaging/build.sh` uses `--collect-all` for uvicorn/starlette/fastapi/
+    websockets/numpy rather than a hand-maintained hidden-imports list.**
+    Those packages resolve a meaningful part of their own import graph
+    dynamically (protocol backends, event-loop implementations), which is
+    exactly what PyInstaller's static analysis is weakest at — the failure
+    mode is a build that succeeds and a binary that dies with
+    `ModuleNotFoundError` on first run, discovered on someone else's
+    machine. `--paths .` is there for the same class of reason: `backend`/
+    `mock_uc` are plain top-level packages findable only because
+    `launcher.py` inserts the repo root into `sys.path` *at runtime* — a
+    line PyInstaller's build-time analysis never executes, so without this
+    flag it silently omits both packages. (Confirmed directly: an earlier
+    build without `--paths .` produced a binary that started and then threw
+    exactly that `ModuleNotFoundError`.) `.github/workflows/build-binary.yml`
+    is the actual check that it keeps working — it starts the built binary
+    and drives a real frame through `/ws`, not just checks that PyInstaller
+    exited 0.
 
 ## Continuous Integration
 

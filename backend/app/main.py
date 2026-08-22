@@ -55,7 +55,17 @@ from .websocket_client import StreamOptions, stream_frames  # noqa: E402
 
 # --- Configuration -----------------------------------------------------------
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+# Overridable so a PyInstaller-frozen launcher (packaging/launcher.py) can
+# point this at wherever it actually bundled the frontend assets --
+# __file__-relative resolution isn't a reliable path inside a frozen build.
+# Unset (every normal run: local, Docker), this is exactly the old
+# hardcoded expression.
+FRONTEND_DIR = Path(
+    os.getenv(
+        "SENSOR_MONITOR_FRONTEND_DIR",
+        str(Path(__file__).resolve().parent.parent.parent / "frontend"),
+    )
+)
 
 # Retain ~10 seconds of frames at the uC's ~100 fps for export.
 BUFFER_CAPACITY = 1000

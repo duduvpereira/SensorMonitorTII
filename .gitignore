@@ -152,6 +152,10 @@ activemq-data/
 # run.sh's own logs and PID state -- never part of the project.
 .sensor-monitor-run/
 
+# packaging/build.sh's own build environment (already covered: build/, dist/,
+# *.spec above are the PyInstaller output itself).
+.pyinstaller-venv/
+
 # Environments
 .env
 .envrc
