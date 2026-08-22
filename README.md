@@ -113,7 +113,8 @@ ports before touching either. `./sensor-monitor --help` lists the flags
 
 Built for **Linux x86_64**, compiled by CI on `ubuntu-24.04` — the same OS
 version the challenge names as the evaluation target, so the build's glibc
-is guaranteed compatible with it. `packaging/build.sh` has no Linux-specific
+is guaranteed compatible with it, and confirmed by hand on a real Ubuntu
+24.04 VM, not just in theory. `packaging/build.sh` has no Linux-specific
 step, so building on macOS should work too, but only the Linux build is
 what CI actually verifies end to end (it starts the binary and drives a
 real frame through `/ws`, not just checks that PyInstaller exits 0 — see
@@ -179,8 +180,8 @@ the container-internal ports (and the `mock-uc:48765` address the two
 containers use to reach each other) stay the same either way:
 
 ```bash
-MOCK_PORT=8766 docker compose up --build
-# then use ws://localhost:8766 from outside Docker, e.g. in demo_pipeline.py
+MOCK_PORT=48766 docker compose up --build
+# then use ws://localhost:48766 from outside Docker, e.g. in demo_pipeline.py
 ```
 
 </details>
@@ -284,16 +285,16 @@ backend together, tails both logs to the terminal, and cleans up on
 
 Before starting anything, it:
 
-- **imports the application in `.venv`'s Python and checks for errors** —
-  a broken environment fails right here, with the real traceback on screen,
-  instead of as a background process that dies a second later for a reason
-  buried in a log file;
 - **stops any leftover `mock_uc.server`/`backend.app.main` process from a
   previous run** that's still holding the ports — the scenario behind most
   `address already in use` reports (a closed terminal or a killed shell that
   never got to shut its children down cleanly). It only ever touches a PID
   whose own command line unmistakably names one of this project's modules,
-  never anything else that happens to reuse a recycled PID.
+  never anything else that happens to reuse a recycled PID;
+- **imports the application in `.venv`'s Python and checks for errors** —
+  a broken environment fails right here, with the real traceback on screen,
+  instead of as a background process that dies a second later for a reason
+  buried in a log file.
 
 Run `./run.sh --doctor` any time (nothing needs to be running first) for a
 one-shot environment report — every Python interpreter found and its
@@ -372,7 +373,7 @@ raw traceback:
 Another mock_uc.server is probably still running. Try:
   pkill -f "mock_uc.server"
 or start this one on a different port:
-  python -m mock_uc.server --port 8766
+  python -m mock_uc.server --port 48766
 ```
 
 #### Run the tests
@@ -501,12 +502,13 @@ sample-rate gauge, connection popups and data export.
 - [x] Dockerfile (multi-stage, non-root) + docker-compose (backend + mock uC)
 - [x] Standalone binary (PyInstaller) for machines with neither Docker nor
       Python, built and smoke-tested by a separate CI workflow
-- [x] Verified running on Ubuntu 24.04, but by CI rather than a manual
-      desktop pass: both `ci.yml` (full test suite) and
-      `build-binary.yml` (build + real frame through the standalone
-      binary) execute on `ubuntu-24.04` GitHub Actions runners, and both
-      are green on the latest commit. Fedora 42 and a hands-on GUI click-
-      through on either distro are not separately verified.
+- [x] Verified running on Ubuntu 24.04 both by CI and by hand: `ci.yml`
+      (full test suite) and `build-binary.yml` (build + real frame through
+      the standalone binary) execute on `ubuntu-24.04` GitHub Actions
+      runners and are green on the latest commit; separately, both `docker
+      compose up --build` and the standalone binary were each manually run
+      and confirmed working on a real Ubuntu 24.04 machine (Docker) and a
+      Ubuntu 24.04 VM (binary). Fedora 42 is not separately verified.
 
 ## Requirements Traceability
 
@@ -523,7 +525,7 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | Validate sample count; red log line on mismatch | ✅ Done | `frame_validator.py` → `.log-line-error` |
 | XXH3_128 hash of raw payload per frame | ✅ Done | `hashing.py` |
 | Git commit history | ✅ Done | incremental commits, see `git log` |
-| Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml` ([Run with Docker](#run-with-docker)); CI (`ci.yml`, `build-binary.yml`) runs and is green on `ubuntu-24.04` directly, not just in a container — see [Project Status](#project-status) for exactly what that does and doesn't cover |
+| Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml` ([Run with Docker](#run-with-docker)); manually confirmed working on a real Ubuntu 24.04 machine (Docker) and a Ubuntu 24.04 VM (standalone binary), plus CI (`ci.yml`, `build-binary.yml`) green on `ubuntu-24.04` directly — see [Project Status](#project-status) for the full picture |
 | *(optional)* Data export | ✅ Done | `export.py` + `GET /export` + GUI controls |
 | *(optional)* Frequency-domain plot (FFT) | ✅ Done | `spectrum.py` (Hann + rfft, dBFS) → FD tab, computed on demand |
 | *(optional)* FFT peak detection | ✅ Done | `spectrum.py::compute_spectrum` (full-resolution argmax) → Peak read-out in FD |
@@ -577,7 +579,7 @@ SensorMonitorTII/
 │   └── signal_generator.py       # synthetic signal (sine tones + noise)
 ├── .github/
 │   ├── workflows/ci.yml          # test + coverage CI pipeline
-│   ├── workflows/build-binary.yml # builds + smoke-tests the standalone binary
+│   ├── workflows/build-binary.yml # builds, smoke-tests, and releases the standalone binary
 │   └── scripts/build_job_summary.py  # renders the CI job summary
 ├── docs/
 │   ├── install-docker.md         # Docker Engine install steps (Ubuntu / Fedora)
@@ -889,6 +891,8 @@ of the push/PR gate above — a PyInstaller build takes a few minutes and
 isn't needed to validate an ordinary code change. Triggered by hand from the
 Actions tab or by pushing a `v*` tag; see
 [Run the standalone binary](#run-the-standalone-binary) for what it produces
-and how to get it. It also runs on `ubuntu-24.04`, and its own last step
-starts the binary it just built and drives a real frame through `/ws` before
-calling the build good — see design decision #29.
+and how to get it. It also runs on `ubuntu-24.04`, and before publishing
+anything it starts the binary it just built and drives a real frame through
+`/ws` — see design decision #29. Only once that passes does it publish the
+binary, both as a workflow artifact and to the rolling `standalone-latest`
+release (design decision #30).
