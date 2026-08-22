@@ -99,11 +99,17 @@ chmod +x sensor-monitor   # if it doesn't already have the execute bit
 ./sensor-monitor
 ```
 
+Then open <http://localhost:48000> to see the GUI — it tries to open a
+browser for you automatically, but that only works with a desktop session
+(not over SSH or in WSL without a display, where opening it yourself is the
+normal path anyway). The URL field is already pre-filled with the mock uC's
+address, so pressing **Connect** is all that's left.
+
 It starts the mock uC and the backend together in a single process (unlike
-[`./run.sh`](#run-the-application), which supervises two), checks both
-ports before touching either, and opens a browser. `./sensor-monitor --help`
-lists the flags (`--port`, `--uc-port`, `--fps`, `--no-mock` for real
-hardware, `--no-browser`, ...).
+[`./run.sh`](#run-the-application), which supervises two) and checks both
+ports before touching either. `./sensor-monitor --help` lists the flags
+(`--port`, `--uc-port`, `--fps`, `--no-mock` for real hardware,
+`--no-browser`, ...).
 
 Built for **Linux x86_64**, compiled by CI on `ubuntu-24.04` — the same OS
 version the challenge names as the evaluation target, so the build's glibc
