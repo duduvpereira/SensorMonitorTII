@@ -467,7 +467,12 @@ sample-rate gauge, connection popups and data export.
 - [x] Dockerfile (multi-stage, non-root) + docker-compose (backend + mock uC)
 - [x] Standalone binary (PyInstaller) for machines with neither Docker nor
       Python, built and smoke-tested by a separate CI workflow
-- [ ] Verified install/run on Ubuntu 24.04 / Fedora 42
+- [x] Verified running on Ubuntu 24.04, but by CI rather than a manual
+      desktop pass: both `ci.yml` (full test suite) and
+      `build-binary.yml` (build + real frame through the standalone
+      binary) execute on `ubuntu-24.04` GitHub Actions runners, and both
+      are green on the latest commit. Fedora 42 and a hands-on GUI click-
+      through on either distro are not separately verified.
 
 ## Requirements Traceability
 
@@ -484,7 +489,7 @@ Mapping the challenge's mandatory requirements to their implementation status:
 | Validate sample count; red log line on mismatch | ✅ Done | `frame_validator.py` → `.log-line-error` |
 | XXH3_128 hash of raw payload per frame | ✅ Done | `hashing.py` |
 | Git commit history | ✅ Done | incremental commits, see `git log` |
-| Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml`; see [Run with Docker](#run-with-docker-recommended) |
+| Runs on Ubuntu 24.04 / Fedora 42 or container | ✅ Done | `Dockerfile` + `docker-compose.yml` ([Run with Docker](#run-with-docker-recommended)); CI (`ci.yml`, `build-binary.yml`) runs and is green on `ubuntu-24.04` directly, not just in a container — see [Project Status](#project-status) for exactly what that does and doesn't cover |
 | *(optional)* Data export | ✅ Done | `export.py` + `GET /export` + GUI controls |
 | *(optional)* Frequency-domain plot (FFT) | ✅ Done | `spectrum.py` (Hann + rfft, dBFS) → FD tab, computed on demand |
 | *(optional)* FFT peak detection | ✅ Done | `spectrum.py::compute_spectrum` (full-resolution argmax) → Peak read-out in FD |
@@ -828,3 +833,14 @@ The coverage-JSON report is used (rather than the Cobertura XML) to key the
 per-file table, since two source roots (`backend/app` and `mock_uc`) each
 contain an `__init__.py` — the XML writer keys files by basename only and
 the two would collide into a single, incorrect row.
+
+### `build-binary` — standalone binary
+
+A second, separate workflow (`.github/workflows/build-binary.yml`), not part
+of the push/PR gate above — a PyInstaller build takes a few minutes and
+isn't needed to validate an ordinary code change. Triggered by hand from the
+Actions tab or by pushing a `v*` tag; see
+[Run the standalone binary](#run-the-standalone-binary) for what it produces
+and how to get it. It also runs on `ubuntu-24.04`, and its own last step
+starts the binary it just built and drives a real frame through `/ws` before
+calling the build good — see design decision #29.
